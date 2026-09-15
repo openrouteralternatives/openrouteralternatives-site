@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+/* Theme is toggled by a class on <html>, with the system preference as the
+   initial value. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   openrouteralternatives.eu — design tokens
+   A restrained, high-density "technical data product" palette. The comparison
+   table is the visual hero, so surfaces stay quiet and type carries hierarchy.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular,
+    "SF Mono", Menlo, Consolas, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-line: var(--brand-line);
+
+  --color-ok: var(--ok);
+  --color-ok-subtle: var(--ok-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-warn: var(--warn);
+  --color-warn-subtle: var(--warn-subtle);
+  --color-caution: var(--caution);
+  --color-caution-subtle: var(--caution-subtle);
+
+  --radius-card: 0.75rem;
+
+  --shadow-card: 0 1px 2px 0 rgb(16 16 18 / 0.04), 0 1px 3px 0 rgb(16 16 18 / 0.03);
+  --shadow-raised: 0 4px 16px -4px rgb(16 16 18 / 0.1), 0 2px 6px -2px rgb(16 16 18 / 0.06);
+  --shadow-pop: 0 12px 32px -8px rgb(16 16 18 / 0.16), 0 4px 10px -4px rgb(16 16 18 / 0.08);
+}
+
+:root {
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --subtle: #fafafa;
+  --muted: #f4f4f5;
+  --line: #ACB0BD;
+  --line-strong: #d6d6db;
+  --ink: #0f0f12;
+  --ink-muted: #63636e;
+  --ink-subtle: #8f8f9b;
+  --brand: #3f3fd8;
+  --brand-ink: #3434b8;
+  --brand-subtle: #eeeefc;
+  --brand-line: #d6d6f7;
+
+  --ok: #157f4a;
+  --ok-subtle: #e6f6ed;
+  --info: #1c62c4;
+  --info-subtle: #e8f0fd;
+  --warn: #8a6100;
+  --warn-subtle: #fbf1dc;
+  --caution: #a44708;
+  --caution-subtle: #fdeee3;
+
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #08080a;
+  --surface: #0d0d10;
+  --subtle: #121216;
+  --muted: #1a1a1f;
+  --line: #24242b;
+  --line-strong: #33333c;
+  --ink: #f2f2f4;
+  --ink-muted: #9a9aa6;
+  --ink-subtle: #6e6e7a;
+  --brand: #8c8cf6;
+  --brand-ink: #a8a8fa;
+  --brand-subtle: #191934;
+  --brand-line: #2e2e5c;
+
+  --ok: #4ec98a;
+  --ok-subtle: #10281c;
+  --info: #6aa5f5;
+  --info-subtle: #10203a;
+  --warn: #d6a640;
+  --warn-subtle: #2a2110;
+  --caution: #e0854c;
+  --caution-subtle: #2c1a0f;
+
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-raised: 0 4px 16px -4px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.7);
+
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background-color: var(--brand-subtle);
+  color: var(--brand-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Tabular figures for every measured number in the dataset. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Hairline grid used behind the hero. Deliberately faint. */
+.grid-veil {
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 20%, transparent 75%);
+}
+
+.scroll-shadow-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.scroll-shadow-x::-webkit-scrollbar {
+  height: 10px;
+}
+.scroll-shadow-x::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-shadow-x::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid var(--canvas);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes expand-row {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-expand {
+  animation: expand-row 0.2s ease-out both;
+}
