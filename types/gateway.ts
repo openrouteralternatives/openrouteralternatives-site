@@ -40,7 +40,13 @@ export type Modality =
   | "mcp"
   | "reranking";
 
-export type Deployment = "hosted" | "vpc" | "on-prem" | "self-hosted";
+/**
+ * Deployment options. "private" is a single-tenant deployment operated for
+ * one customer, offered on enterprise or custom plans, where the vendor does
+ * not say whether it runs in the customer's cloud or on their premises. It is
+ * recorded as its own option rather than guessed into "vpc" or "on-prem".
+ */
+export type Deployment = "hosted" | "vpc" | "on-prem" | "self-hosted" | "private";
 
 /** Who controls the company today. Material when evaluating a dependency. */
 export type OwnershipStatus =
@@ -60,8 +66,28 @@ export type PricingTransparency =
   | "contact-sales"
   | "unresolved";
 
-/** Yes/no questions where "we don't know" is a real and common answer. */
-export type Capability = "yes" | "no" | "enterprise" | "unknown";
+/**
+ * Yes/no questions where "we don't know" is a real and common answer.
+ *
+ * "configurable" covers capabilities that exist but depend on plan, route,
+ * region or customer configuration rather than applying to every request —
+ * for example zero data retention that is switched on per deployment. It is
+ * deliberately distinct from "yes", so a conditional option is never shown
+ * as a blanket guarantee.
+ */
+export type Capability = "yes" | "configurable" | "enterprise" | "no" | "unknown";
+
+/**
+ * Compatibility with the OpenAI API surface.
+ *
+ * Recorded as a comparison attribute, never as a score: a gateway is not
+ * ranked by it. "partial" covers a documented subset (for example chat
+ * completions but not the responses, embeddings or audio endpoints). "unknown"
+ * means the documentation was checked and does not settle the question; a
+ * field that has not been checked at all stays `value: null` with a
+ * `needs-verification` status instead.
+ */
+export type OpenAiCompatibility = "yes" | "partial" | "no" | "unknown";
 
 export interface EmployeeBand {
   /** LinkedIn company-size band, e.g. "11-50". */
@@ -128,9 +154,16 @@ export interface Gateway {
   providers: Metric;
   /** Model x provider combinations. */
   routes: Metric;
-  /** Individually addressable API entries, where a vendor publishes them. */
+  /**
+   * Individually addressable API entries, where a vendor publishes them.
+   *
+   * Not a derived quantity: routes x modalities is never written here. The
+   * definition and the values are established in the data phase, per vendor.
+   */
   endpoints: Metric;
   modalities: Field<Modality[]>;
+  /** Whether clients written against the OpenAI API can talk to the gateway. */
+  openaiCompatible: Field<OpenAiCompatibility>;
 
   // --- Infrastructure ------------------------------------------------------
   gatewayLocations: Field<string[]>;

@@ -1,17 +1,27 @@
 import Link from "next/link";
-import type { Capability, Deployment, Field, Gateway, Modality } from "@/types";
+import type {
+  Capability,
+  Deployment,
+  Field,
+  Gateway,
+  Modality,
+  OpenAiCompatibility,
+} from "@/types";
 import {
   CAPABILITY,
   DEPLOYMENT,
   EU_RESIDENCY,
   JURISDICTION,
   MODALITY,
+  OPENAI_COMPATIBILITY,
   OWNERSHIP_STATUS,
   PRICING_TRANSPARENCY,
   PRODUCT_STATUS,
 } from "@/lib/taxonomy";
-import { flagEmoji, formatCount } from "@/lib/format";
-import { MetricCell } from "@/components/ui/metric-value";
+import { flagEmoji, formatCount, formatQualifiedCount } from "@/lib/format";
+import { metricDisplay } from "@/lib/metric";
+import { routesOrEndpoints, secondaryCoverage } from "@/lib/gateway";
+import { MetricCell, MetricStatusChip } from "@/components/ui/metric-value";
 import { Badge } from "@/components/ui/badge";
 import { InfoTip } from "@/components/ui/tooltip";
 import {
@@ -52,12 +62,46 @@ export function ModelsCell({ gateway }: { gateway: Gateway }) {
   return <MetricCell metric={gateway.models} />;
 }
 
+/**
+ * Routes and endpoints in one column.
+ *
+ * The two stay separate fields in the record because they count different
+ * things; the column shows whichever one carries a figure and labels it, so
+ * "684 endpoints" is never read as "684 routes".
+ */
 export function RoutesCell({ gateway }: { gateway: Gateway }) {
-  return <MetricCell metric={gateway.routes} />;
+  const { metric, kind } = routesOrEndpoints(gateway);
+  const hasFigure = Boolean(metricDisplay(metric.current));
+  return <MetricCell metric={metric} caption={hasFigure ? kind : undefined} />;
 }
 
-export function EndpointsCell({ gateway }: { gateway: Gateway }) {
-  return <MetricCell metric={gateway.endpoints} />;
+/** The same pair at detail size, with the second figure where a vendor publishes both. */
+export function CoverageDetail({ gateway }: { gateway: Gateway }) {
+  const primary = routesOrEndpoints(gateway);
+  const secondary = secondaryCoverage(gateway);
+  const hasFigure = Boolean(metricDisplay(primary.metric.current));
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <MetricCell
+        metric={primary.metric}
+        align="left"
+        caption={hasFigure ? primary.kind : undefined}
+      />
+      {secondary ? (
+        <span className="inline-flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink-muted">
+          <span>
+            Also{" "}
+            <span className="tnum font-medium text-ink">
+              {metricDisplay(secondary.metric.current)}
+            </span>{" "}
+            {secondary.kind}
+          </span>
+          <MetricStatusChip value={secondary.metric.current} />
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 /** Ownership status, with the parent company where there is one. */
@@ -166,7 +210,7 @@ export function ModalityCell({
               .join(", ")}`}
           >
             <Badge tone="neutral" size="xs">
-              +{hidden.length} more
+              +{hidden.length}
             </Badge>
           </button>
         </InfoTip>
@@ -265,6 +309,45 @@ export function CapabilityCell({ field }: { field: Field<Capability> }) {
   );
 }
 
+/**
+ * OpenAI API compatibility.
+ *
+ * Four labels, never a score. A field with no recorded value renders the
+ * "Unknown" label with the field's own status in the tooltip, so a gap in the
+ * research reads differently from a documented "unknown".
+ */
+export function OpenAiCompatibilityCell({
+  field,
+  size = "xs",
+}: {
+  field: Field<OpenAiCompatibility>;
+  size?: "xs" | "sm";
+}) {
+  const recorded = field.value !== null;
+  const key: OpenAiCompatibility = field.value ?? "unknown";
+  const term = OPENAI_COMPATIBILITY[key];
+  const description = !recorded
+    ? `${term.label}. ${provenanceText(field)}`
+    : field.note
+      ? `${term.description} ${field.note}`
+      : term.description;
+
+  return (
+    <InfoTip label={description}>
+      <button
+        type="button"
+        className="cursor-help"
+        aria-label={`OpenAI compatible: ${description}`}
+      >
+        <Badge tone={recorded ? term.tone : "neutral"} size={size} dot={recorded}>
+          {term.label}
+          {recorded ? <ProvenanceGlyph field={field} /> : null}
+        </Badge>
+      </button>
+    </InfoTip>
+  );
+}
+
 export function CertificationsCell({ field }: { field: Field<string[]> }) {
   if (!field.value) return <NoValue compact field={field} />;
 
@@ -350,7 +433,7 @@ export function SocialCell({
   const body =
     followers.value !== null ? (
       <span className="tnum text-[13px] text-ink">
-        {formatCount(followers.value)}
+        {formatQualifiedCount(followers.value, followers.qualifier)}
         <ProvenanceGlyph field={followers} />
       </span>
     ) : (

@@ -13,7 +13,10 @@ update or page can be checked against them without re-reading the original brief
 
 ## What may never appear
 
-- An arbitrary overall score, rating or composite index.
+- An arbitrary overall score, rating or composite index. A category page may order its
+  members by a weighted score only when the page itself declares every recorded attribute
+  and weight that feeds it, the scoring code refers to no gateway by name, and an
+  attribute that is not recorded earns nothing.
 - The claim that one company is "the best OpenRouter alternative" without a specific
   measurable criterion attached to that claim.
 - An invented value of any kind: model count, provider count, follower count, legal
@@ -26,6 +29,8 @@ update or page can be checked against them without re-reading the original brief
   direction.
 - Sorting or filtering manipulated to favour one entry, or a competitor hidden from a
   list they qualify for.
+- A gateway named in ranking, scoring or category code. Membership and order follow from
+  recorded values only.
 
 ## Counting rules
 
@@ -38,6 +43,16 @@ model × provider combinations.
 **Providers.** Distinct upstream inference providers or model companies reachable through
 the gateway. The same provider is not counted twice for being offered in two regions.
 Vendor-published counts are marked vendor-stated.
+
+**Routes and endpoints.** A route is one model served by one provider; an endpoint is an
+individually addressable API entry as the vendor publishes it. They are separate fields
+that share one table column, labelled with whichever is shown, and neither is ever
+derived from the other or from modalities.
+
+**Source of truth.** The most recent verified research pass supplies the current vendor
+figures and company attributes. Where it publishes a figure, that figure is current and
+this project's earlier measurements stay on record in the metric's history; where it
+publishes none, the project's own dated measurement remains current.
 
 **Employees.** LinkedIn company-size bands only. Precise headcounts are never
 reconstructed from third-party databases.

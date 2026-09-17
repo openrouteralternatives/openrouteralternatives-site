@@ -21,7 +21,8 @@ export default function NotFound() {
             ["/compare", "Compare every gateway"],
             ["/gateways", "Browse gateway profiles"],
             ["/categories", "Browse categories"],
-            ["/methodology", "Read the methodology"],
+            ["/#methodology", "Read the methodology"],
+            ["/blog", "Read the blog"],
           ].map(([href, label]) => (
             <li key={href}>
               <Link

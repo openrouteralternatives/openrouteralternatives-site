@@ -8,7 +8,30 @@ export type RankingMetric =
   | "official-models"
   | "providers"
   | "modalities"
+  /**
+   * A weighted sum of normalised attributes declared on the category itself
+   * (see `signals`). Every signal is a recorded, structured field; an
+   * attribute a gateway has not recorded earns nothing, and no gateway is
+   * ever special-cased by name.
+   */
+  | "score"
   | "none";
+
+/**
+ * One attribute that contributes to a score-ranked category.
+ *
+ * `value` normalises a recorded field to the 0..1 range, or returns null when
+ * the field has no recorded value. Weights are relative: the score is the
+ * weighted sum divided by the total weight, so it always reads on a 0..100
+ * scale regardless of how many signals a category declares.
+ */
+export interface RankingSignal {
+  id: string;
+  /** Short label used in the breakdown shown beside each ranked entry. */
+  label: string;
+  weight: number;
+  value: (gateway: Gateway) => number | null;
+}
 
 export interface CategoryDefinition {
   slug: string;
@@ -26,6 +49,8 @@ export interface CategoryDefinition {
   /** Exactly how the list is ordered, or why it is not ranked. */
   rankingCriterion: string;
   rankingMetric: RankingMetric;
+  /** Signals consumed when `rankingMetric` is "score". Ignored otherwise. */
+  signals?: RankingSignal[];
   /** Whether a "top 3" block is editorially justified for this category. */
   showTopThree: boolean;
   /** Predicate over the canonical dataset. */

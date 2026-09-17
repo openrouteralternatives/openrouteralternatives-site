@@ -1,9 +1,11 @@
-import type { Gateway } from "@/types";
+import type { Capability, EmployeeBand, EuResidency, Gateway } from "@/types";
 import type { Source } from "@/types/source";
-import { field, notApplicable, unverified } from "@/types/field";
+import type { MetricValue } from "@/types/metric";
+import { field, notApplicable, notPublishedField, unverified } from "@/types/field";
 import { createGateway } from "@/lib/create-gateway";
+import { formatCount } from "@/lib/format";
 import {
-  conflicting,
+  catalogueCount,
   measured,
   metric,
   notComparable,
@@ -22,9 +24,10 @@ import {
  * Editorial rules that govern what may appear here:
  *
  *  1. A field carries a value only when it is supported by the project's
- *     research: the September 8, 2026 measured baseline, the validated company
- *     research applied in the September 15, 2026 revision, or unambiguous
- *     public record (an open-source licence, a cloud provider's regions).
+ *     research: the September 8, 2026 measured baseline, the September 15,
+ *     2026 endpoint measurements, the September 17, 2026 verified research
+ *     pass over vendor sites and company profiles, or unambiguous public
+ *     record (an open-source licence, a cloud provider's regions).
  *  2. Anything else stays `needs-verification` with `value: null`. Never
  *     substitute a plausible number for a researched one, and never resolve a
  *     conflict between sources by picking the more convenient side.
@@ -32,21 +35,37 @@ import {
  *     vendor-stated counts are stored as separate observations and are never
  *     mixed inside one ranking.
  *  4. Models, routes and providers are three different quantities. A route is
- *     a model x provider combination. Never present routes as models.
+ *     a model x provider combination; an endpoint is an addressable API entry
+ *     as the vendor publishes it. Never present routes or endpoints as models.
  *  5. Company jurisdiction is recorded separately from gateway location and
  *     from inference location. EU incorporation is never written into
  *     `euResidency`.
+ *  6. `openaiCompatible` is recorded only from the vendor's own documentation
+ *     or from an endpoint this project exercised. It is never inferred from
+ *     the product category, and it is never used to rank anything.
+ *  7. `logo` points at a locally stored asset under /public/logos taken from
+ *     the vendor's own site. Entries without one render a monogram; nothing
+ *     hotlinks a third party's image. See public/logos/README.md for the
+ *     provenance of each file.
+ *  8. The September 17, 2026 research pass is the source of truth for current
+ *     vendor figures and company attributes. Where it publishes a figure, that
+ *     figure is `current` and earlier measurements stay on record in
+ *     `history`; where it publishes none, this project's own dated measurement
+ *     remains current. Nothing is overwritten.
  *
  * `qualifier: "at-least"` marks a vendor floor such as "50+". The number still
  * sorts normally; the UI renders the plus sign so a floor is never shown as an
  * exact count.
  */
 
-/** Date the measured catalogue counts in this file were taken. */
+/** Date the baseline catalogue counts in this file were taken. */
 export const BASELINE_DATE = "2026-09-08";
 
-/** Date this dataset revision was assembled. */
-export const DATASET_DATE = "2026-09-15";
+/** Date the public model endpoints were last enumerated by this project. */
+export const MEASUREMENT_DATE = "2026-09-15";
+
+/** Date this dataset revision was assembled: the verified research pass. */
+export const DATASET_DATE = "2026-09-17";
 
 const baselineSource = (): Source => ({
   id: "baseline",
@@ -56,9 +75,18 @@ const baselineSource = (): Source => ({
   retrieved: BASELINE_DATE,
 });
 
+/** The verified research pass that this revision applies. */
+const researchSource = (): Source => ({
+  id: "research",
+  kind: "project-baseline",
+  label: "Sep 17, 2026 verified research",
+  url: null,
+  retrieved: DATASET_DATE,
+});
+
 const modelsEndpointSource = (
   url: string | null = null,
-  retrieved: string = DATASET_DATE,
+  retrieved: string = MEASUREMENT_DATE,
 ): Source => ({
   id: "models-endpoint",
   kind: "models-api",
@@ -72,7 +100,7 @@ const providersEndpointSource = (url: string): Source => ({
   kind: "models-api",
   label: "Public providers endpoint",
   url,
-  retrieved: DATASET_DATE,
+  retrieved: MEASUREMENT_DATE,
 });
 
 const siteSource = (url: string): Source => ({
@@ -80,6 +108,7 @@ const siteSource = (url: string): Source => ({
   kind: "official-website",
   label: "Official website",
   url,
+  retrieved: DATASET_DATE,
 });
 
 const repoSource = (url: string): Source => ({
@@ -94,6 +123,15 @@ const docsSource = (url: string): Source => ({
   kind: "documentation",
   label: "Documentation",
   url,
+  retrieved: DATASET_DATE,
+});
+
+const pricingSource = (url: string): Source => ({
+  id: "pricing",
+  kind: "pricing",
+  label: "Pricing page",
+  url,
+  retrieved: DATASET_DATE,
 });
 
 const legalSource = (url: string | null = null): Source => ({
@@ -117,18 +155,6 @@ const registrySource = (label: string): Source => ({
   retrieved: DATASET_DATE,
 });
 
-/**
- * Vendor material for an entry whose canonical URL has not been confirmed, so
- * a figure can still cite where it came from without publishing a guessed link.
- */
-const vendorMaterialSource = (): Source => ({
-  id: "site",
-  kind: "official-website",
-  label: "Vendor material",
-  url: null,
-  retrieved: DATASET_DATE,
-});
-
 const xSource = (handle: string): Source => ({
   id: "x",
   kind: "x",
@@ -137,11 +163,11 @@ const xSource = (handle: string): Source => ({
   retrieved: DATASET_DATE,
 });
 
-const linkedinSource = (): Source => ({
+const linkedinSource = (url: string): Source => ({
   id: "linkedin",
   kind: "linkedin",
   label: "LinkedIn company profile",
-  url: null,
+  url,
   retrieved: DATASET_DATE,
 });
 
@@ -162,6 +188,108 @@ const VENDOR_NOTE =
 const OPEN_FIELD =
   "Open in the current dataset revision. Awaiting a primary-source check.";
 
+/** Appended wherever EU incorporation is recorded, so it is never read as residency. */
+const EU_NOTE =
+  "EU-incorporated. This says nothing on its own about where requests are processed.";
+
+// ---------------------------------------------------------------------------
+// Field helpers for the attributes the research pass records in the same form
+// for every gateway. Each one fixes the status and the source id, so a value
+// cannot be recorded without saying where it came from.
+// ---------------------------------------------------------------------------
+
+/** Parses a LinkedIn company-size band such as "11-50", "1,001-5,000" or "10,001+". */
+function band(label: string): EmployeeBand {
+  const [lo, hi] = label.replace(/,/g, "").split("-");
+  return { band: label, min: Number(lo.replace("+", "")), max: hi ? Number(hi) : null };
+}
+
+const employees = (label: string, note = "LinkedIn company-size band.") =>
+  field(band(label), "verified", { note, sources: ["linkedin"], asOf: DATASET_DATE });
+
+type Network = "LinkedIn" | "X";
+const networkSource = (network: Network) => [network === "LinkedIn" ? "linkedin" : "x"];
+
+const exactFollowers = (n: number, network: Network) =>
+  field(n, "verified", {
+    note: `Exact ${network} follower count captured on the snapshot date.`,
+    sources: networkSource(network),
+  });
+
+const approxFollowers = (n: number, network: Network) =>
+  field(n, "estimated", {
+    note: `Approximate ${network} follower count, rounded by scale, captured on the snapshot date.`,
+    sources: networkSource(network),
+  });
+
+const floorFollowers = (n: number, network: Network) =>
+  field(n, "estimated", {
+    note: `${network} follower count published as a floor on the snapshot date.`,
+    sources: networkSource(network),
+    qualifier: "at-least",
+  });
+
+/** A capability the vendor's public material does not address either way. */
+const notStated = (what: string) =>
+  field<Capability>("unknown", "verified", {
+    note: `The vendor's public material does not state a ${what} position.`,
+    sources: ["research"],
+    asOf: DATASET_DATE,
+  });
+
+/** No residency claim found in the vendor's public material. */
+const residencyNotStated = () =>
+  field<EuResidency>("not-stated", "verified", {
+    note: "No claim about where requests are processed was found in the vendor's public material.",
+    sources: ["research"],
+    asOf: DATASET_DATE,
+  });
+
+const noCertifications = () =>
+  notPublishedField<string[]>(
+    "The vendor does not publicly state any security certifications.",
+  );
+
+/**
+ * A count read from a vendor's own catalogue or documentation page.
+ *
+ * Vendor pages change often, so an exact-looking figure copied from one is
+ * shown as a floor rounded down to the nearest ten (72 -> "70+", 292 ->
+ * "290+"). Counts under 20 stay exact, because a ten-step floor would hide
+ * more than it protects. The exact figure remains the sortable value and is
+ * stated in the note, so nothing is lost.
+ *
+ * `documented` is for integration counts of customer-configured gateways:
+ * shown and sortable, never ranked against hosted catalogues.
+ */
+const listed = (
+  n: number,
+  status: "official" | "catalogue" | "documented",
+  date: string,
+  extra: {
+    sourceIds: string[];
+    note?: string;
+    scope?: MetricValue["scope"];
+    display?: string;
+  },
+): MetricValue => {
+  const rounded = n >= 20 && n % 10 !== 0;
+  const floor = Math.floor(n / 10) * 10;
+  const display = extra.display ?? (n < 20 ? formatCount(n) : `${formatCount(floor)}+`);
+  const provenance = rounded
+    ? `Listed as ${formatCount(n)} on the source page; shown as a floor because vendor pages change often.`
+    : "";
+  return {
+    value: n,
+    display,
+    status,
+    date,
+    sourceIds: extra.sourceIds,
+    scope: extra.scope,
+    note: [provenance, extra.note].filter(Boolean).join(" ") || undefined,
+  };
+};
+
 export const gateways: Gateway[] = [
   // ---------------------------------------------------------------------
   // Primary managed, multi-provider gateways and model routers
@@ -171,76 +299,72 @@ export const gateways: Gateway[] = [
     slug: "eden-ai",
     name: "Eden AI",
     website: "https://www.edenai.co",
+    logo: "/logos/eden-ai.png",
     summary:
       "A multi-provider AI API that exposes generative and non-generative models — text, speech, vision, OCR and document processing — behind one interface.",
     differentiator:
-      "Widest measured provider network and modality coverage of any EU-incorporated entry.",
+      "EU-native multi-provider AI gateway with routing, failover and broad expert-model coverage.",
     type: "managed",
     tier: "primary",
-    categories: ["largest-model-catalogues", "eu-gateways", "multimodal", "provider-networks"],
+    categories: ["largest-model-catalogues", "provider-networks", "eu-gateways", "eu-hosted", "multimodal", "enterprise", "agent-gateways"],
     jurisdictionBucket: "eu",
-    country: field("France", "verified", { sources: ["site"], asOf: DATASET_DATE }),
+    country: field("France", "verified", { sources: ["site", "research"], asOf: DATASET_DATE }),
     countryCode: field("FR", "verified", { sources: ["site"] }),
-    euJurisdiction: field(true, "verified", {
-      note: "EU-incorporated. This says nothing on its own about where requests are processed.",
-      sources: ["site"],
-    }),
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["site"] }),
     legalEntity: unverified(
       "The operating entity name has not been read from a registry filing for this dataset.",
     ),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/edenai/",
       xUrl: "https://x.com/edenaico",
-      linkedinFollowers: field(13465, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(2400, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(13481, "LinkedIn"),
+      xFollowers: exactFollowers(612, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      measured(360, DATASET_DATE, {
-        scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} Counted from the public LLM catalogue, which is the only Eden AI catalogue exposed as an enumerable endpoint; its OCR, speech, image, video and document models are not individually listed there.`,
+      listed(870, "catalogue", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["site", "research"],
+        note: "Official catalogue count across every modality on September 17, 2026. The marketing site states 500+ models. Not an LLM-only figure, so it is never ranked against the measured LLM catalogues.",
       }),
       [
+        measured(360, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} Counted from the public LLM catalogue, which is the only Eden AI catalogue exposed as an enumerable endpoint; its OCR, speech, image, video and document models are not individually listed there.`,
+        }),
         measured(1038, BASELINE_DATE, {
           sourceIds: ["baseline"],
           note: "Project baseline figure covering the platform as a whole rather than the LLM catalogue alone. Preserved as a historical observation; not comparable with the LLM-scoped measurements.",
         }),
         official("500+", DATASET_DATE, {
           sourceIds: ["site"],
-          note: "Vendor floor published on the marketing site, lower than both measurements.",
+          note: "Vendor floor published on the marketing site, lower than both the catalogue count and the measurements.",
         }),
       ],
     ),
     providers: metric(
-      measured(78, DATASET_DATE, {
-        sourceIds: ["providers-endpoint"],
-        note: "Distinct providers across all nine features exposed by the public provider/subfeature endpoint.",
+      official("50+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Officially stated floor. Between 33 and 68 providers are reached depending on which feature scopes are counted.",
       }),
       [
-        official("50+", DATASET_DATE, {
-          sourceIds: ["site"],
-          note: "Vendor floor, lower than the measured count.",
+        measured(78, MEASUREMENT_DATE, {
+          sourceIds: ["providers-endpoint"],
+          note: "Distinct providers across all nine features exposed by the public provider/subfeature endpoint.",
         }),
       ],
     ),
+    routes: metric(
+      notPublished("Multiple API surfaces; the vendor publishes no single route total."),
+    ),
     endpoints: metric(
-      measured(428, DATASET_DATE, {
+      measured(428, MEASUREMENT_DATE, {
         sourceIds: ["providers-endpoint"],
-        note: "Provider x subfeature combinations exposed publicly, of which 425 were reported working.",
+        note: "Provider x subfeature combinations exposed publicly, of which 425 were reported working. A project measurement; the vendor publishes no endpoint total of its own.",
       }),
     ),
     modalities: field(
@@ -251,172 +375,78 @@ export const gateways: Gateway[] = [
         "stt",
         "tts",
         "image",
+        "audio",
         "video",
         "translation",
         "documents",
         "embeddings",
+        "mcp",
       ],
-      "verified",
+      "vendor-stated",
       {
-        note: "Counted from the public provider/subfeature endpoint, which exposes nine features across 74 subfeatures including OCR parsers, speech, video and translation.",
-        sources: ["providers-endpoint"],
+        note: "Eleven modalities documented by the vendor, plus Model Context Protocol support: the documentation's MCP Server page states that Eden AI's expert models are available as MCP tools, so any MCP client or LLM agent loop can call OCR, web search, speech and translation. The vendor also lists web capabilities, which are not a modality in this taxonomy.",
+        sources: ["site", "docs", "research"],
         asOf: DATASET_DATE,
       },
     ),
-    deployment: field(["hosted"], "vendor-stated", { sources: ["site"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible surface. Which endpoints beyond chat completions are covered has not been checked for this dataset.",
+      sources: ["site"],
+    }),
+    deployment: field(["hosted", "private"], "vendor-stated", {
+      note: "The pricing page lists private deployments for specific compliance needs on the Advanced AI Platform (custom) plan. It does not say whether they run in the customer's cloud or on-premise, so the option is recorded as private rather than as VPC or on-premise.",
+      sources: ["pricing", "research"],
+    }),
+    gatewayLocations: field(["France", "EU endpoint"], "vendor-stated", {
+      sources: ["research"],
+    }),
     openSource: field("no", "verified", { sources: ["site"] }),
     certifications: field(["SOC 2", "ISO/IEC 27001"], "vendor-stated", {
       note: "Published in the vendor's own security material. The certified scope has not been read from the certificates themselves.",
       sources: ["site"],
     }),
     zeroDataRetention: field("yes", "vendor-stated", {
-      note: "Zero-data-retention is part of the vendor's published positioning.",
-      sources: ["site"],
+      note: "Zero data retention is documented for the dedicated EU endpoint and is part of the vendor's published positioning.",
+      sources: ["site", "research"],
     }),
-    euResidency: field("eu-routes", "vendor-stated", {
-      note: "EU processing is documented for part of the catalogue. It is not automatic for every route, so the whole-catalogue label is deliberately not applied.",
-      sources: ["site"],
+    euResidency: field("eu-by-default", "vendor-stated", {
+      note: "A dedicated EU endpoint provides EU processing with zero data retention and GDPR-ready documentation.",
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
-    pricingTransparency: field("public", "verified", {
-      note: "Per-subfeature pricing is published in the public provider/subfeature endpoint.",
-      sources: ["providers-endpoint"],
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      note: "Per-subfeature pricing is published in the public provider/subfeature endpoint; enterprise terms are quoted separately.",
+      sources: ["providers-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
     strengths: [
-      "Second-largest measured provider network in this dataset at 78 upstream providers, and the largest of any EU-incorporated entry \u2014 48 more than the next EU vendor.",
-      "Joint-widest measured modality coverage here at ten features, counted from the public catalogue rather than taken from marketing: OCR parsers, speech, video, translation, embeddings and document extraction alongside text.",
-      "Third-largest measured LLM catalogue on the September 15, 2026 snapshot at 360 models.",
-      "EU-incorporated operating company, with SOC 2 and ISO/IEC 27001 stated.",
+      "Broadest documented modality coverage in this dataset: eleven modalities including OCR, speech, translation, video and document processing alongside text.",
+      "EU-incorporated with EU processing by default through a dedicated EU endpoint, zero data retention, SOC 2 and ISO/IEC 27001 stated.",
+      "Largest official catalogue among EU-incorporated entries at 870 models, with 360 LLM models measured directly from the public endpoint on September 15, 2026.",
+      "78 upstream providers measured on September 15, 2026, above the 50+ floor the vendor states.",
+      "Expert models are exposed as MCP tools, so an MCP client or agent loop can call OCR, web search, speech and translation through the gateway.",
     ],
     limitations: [
-      "EU processing is documented for part of the catalogue rather than every route, so it is labelled EU routes rather than EU by default.",
       "The operating legal entity has not been read from a registry filing for this dataset.",
-      "Only the LLM catalogue is individually enumerable from the public API. The OCR, speech, image, video and document models are not listed there, so the measured model count covers less of the platform than the same figure does for a text-only router.",
+      "Private deployment is offered on the custom plan, but the vendor does not say whether it is a customer-cloud or on-premise deployment.",
+      "Only the LLM catalogue is individually enumerable from the public API, so the measured LLM count covers less of the platform than the 870-model catalogue figure.",
+      "No single route or endpoint total is published across its API surfaces; the 428 provider x subfeature endpoints are a project measurement.",
       "Certifications are stated by the vendor and have not been checked against the certificates themselves.",
     ],
     bestFor: [
       "Teams that need several modalities behind one API rather than text generation alone.",
-      "EU buyers who want an EU-incorporated vendor with broad provider coverage.",
+      "EU buyers who want an EU-incorporated vendor with EU processing by default.",
     ],
     sources: [
-baselineSource(),
+      researchSource(),
+      baselineSource(),
       modelsEndpointSource("https://api.edenai.run/v2/llm/models"),
       providersEndpointSource("https://api.edenai.run/v2/info/provider_subfeatures"),
       siteSource("https://www.edenai.co"),
-      linkedinSource(),
+      docsSource("https://www.edenai.co/docs/v3/expert-models/mcp-server"),
+      pricingSource("https://www.edenai.co/pricing"),
+      linkedinSource("https://www.linkedin.com/company/edenai/"),
       xSource("edenaico"),
-    ],
-    lastVerified: DATASET_DATE,
-  }),
-
-  createGateway({
-    id: "openrouter",
-    slug: "openrouter",
-    name: "OpenRouter",
-    website: "https://openrouter.ai",
-    summary:
-      "A unified, OpenAI-compatible API that routes chat and completion requests across many upstream model providers.",
-    differentiator: "The reference point most of this dataset is compared against.",
-    type: "managed",
-    tier: "primary",
-    categories: ["largest-model-catalogues", "provider-networks"],
-    jurisdictionBucket: "us",
-    legalEntity: field("OpenRouter, Inc.", "verified", {
-      sources: ["site"],
-      asOf: DATASET_DATE,
-    }),
-    country: field("United States", "verified", { sources: ["site"] }),
-    countryCode: field("US", "verified", { sources: ["site"] }),
-    euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
-    productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
-    social: {
-      linkedinUrl: null,
-      xUrl: "https://x.com/OpenRouter",
-      linkedinFollowers: field(31479, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(142000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
-      snapshotDate: DATASET_DATE,
-    },
-    models: metric(
-      measured(356, DATASET_DATE, {
-        scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} The endpoint returned 446 addressable identifiers, which collapse to 356 once routing variants such as :free and :nitro are removed.`,
-      }),
-      [
-        measured(428, BASELINE_DATE, {
-          sourceIds: ["baseline"],
-          note: "Project baseline figure, counted before routing variants were excluded.",
-        }),
-        official("500+", DATASET_DATE, {
-          sourceIds: ["site"],
-          note: "Current vendor-stated figure.",
-        }),
-      ],
-    ),
-    providers: metric(
-      measured(106, DATASET_DATE, {
-        sourceIds: ["providers-endpoint"],
-        note: "Distinct providers listed by the public providers endpoint.",
-      }),
-      [
-        official("60+", DATASET_DATE, {
-          sourceIds: ["site"],
-          note: "Vendor floor, well below the measured count.",
-        }),
-      ],
-    ),
-    modalities: field(["llm", "vision"], "vendor-stated", {
-      note: VENDOR_NOTE,
-      sources: ["site"],
-    }),
-    deployment: field(["hosted"], "vendor-stated", { sources: ["site"] }),
-    openSource: field("no", "verified"),
-    byok: field("yes", "vendor-stated", {
-      note: "Bring-your-own-key routing is documented on the vendor's site.",
-      sources: ["site"],
-    }),
-    euResidency: field("enterprise-only", "vendor-stated", {
-      note: "An EU endpoint is offered, but as an enterprise distinction rather than an option on standard plans.",
-      sources: ["site"],
-      asOf: DATASET_DATE,
-    }),
-    pricingTransparency: field("public", "verified", {
-      note: "Per-model input and output pricing is published in the public model endpoint.",
-      sources: ["models-endpoint"],
-      asOf: DATASET_DATE,
-    }),
-    strengths: [
-      "Largest measured upstream provider network in this dataset at 106 providers, counted from its public providers endpoint.",
-      "Model catalogue is publicly enumerable, so counts can be measured rather than taken on trust.",
-      "OpenAI-compatible surface keeps migration cost low for existing clients.",
-      "The broadest ecosystem and brand reach of any entry here.",
-    ],
-    limitations: [
-      "EU processing is an enterprise-only distinction rather than a standard-plan option.",
-      "US-incorporated, which is material where EU-entity contracting is a requirement.",
-      "Its own marketing understates the network: the site states 60+ while the public endpoint lists 106.",
-    ],
-    bestFor: ["Teams comparing many text and vision models behind one compatible API."],
-    sources: [
-baselineSource(),
-      modelsEndpointSource("https://openrouter.ai/api/v1/models"),
-      providersEndpointSource("https://openrouter.ai/api/v1/providers"),
-      siteSource("https://openrouter.ai"),
-      linkedinSource(),
-      xSource("OpenRouter"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -426,108 +456,131 @@ baselineSource(),
     slug: "requesty",
     name: "Requesty",
     website: "https://www.requesty.ai",
+    logo: "/logos/requesty.png",
     summary:
-      "A managed LLM routing layer that sits in front of multiple upstream providers behind a single API, with an EU gateway in Frankfurt.",
-    differentiator: "Largest measured LLM catalogue; UK-incorporated with an EU gateway.",
+      "A managed LLM routing layer that sits in front of multiple upstream providers behind a single API, with an EU gateway hosted on AWS in France.",
+    differentiator:
+      "OpenAI-compatible multi-provider gateway with explicit model-versus-endpoint catalogue views.",
     type: "managed",
     tier: "primary",
-    categories: ["largest-model-catalogues", "eu-hosted", "provider-networks"],
+    categories: ["largest-model-catalogues", "provider-networks", "eu-hosted", "multimodal"],
     jurisdictionBucket: "uk",
     legalEntity: field("REQUESTY LTD", "verified", {
       note: "Companies House number 15165717.",
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("United Kingdom", "verified", { sources: ["registry"] }),
+    country: field("United Kingdom", "verified", { sources: ["registry", "research"] }),
     countryCode: field("GB", "verified", { sources: ["registry"] }),
     city: field("London", "verified", { sources: ["registry"] }),
     euJurisdiction: field(false, "verified", {
       note: "UK-incorporated, so outside EU jurisdiction. This is a separate question from where its gateway sits.",
       sources: ["registry"],
     }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
+    employees: employees("2-10"),
     euResidency: field("eu-available", "vendor-stated", {
-      note: "An EU gateway in Frankfurt is documented. Gateway location is not the same as inference location, which is set per upstream provider.",
-      sources: ["docs"],
+      note: "An EU gateway endpoint hosted on AWS in France is documented. Gateway location is not the same as inference location, which is set per upstream provider.",
+      sources: ["docs", "research"],
       asOf: DATASET_DATE,
+    }),
+    gatewayLocations: field(["London", "EU endpoint / AWS France"], "vendor-stated", {
+      sources: ["research"],
     }),
     subprocessors: field("Published subprocessor list", "vendor-stated", {
       note: "Subprocessors are enumerated publicly rather than described in general terms.",
       sources: ["legal"],
     }),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/requesty-ai/",
       xUrl: "https://x.com/RequestyAI",
-      linkedinFollowers: field(3661, "estimated", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(760, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(3700, "LinkedIn"),
+      xFollowers: approxFollowers(760, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      measured(545, DATASET_DATE, {
+      listed(211, "catalogue", DATASET_DATE, {
         scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} The catalogue exposes 684 provider/model endpoints; 88 model names are served by more than one provider, and collapsing those leaves 545 distinct models.`,
+        sourceIds: ["site", "research"],
+        note: "The vendor's catalogue page separates 211 unique models from 684 unique endpoints across 32 providers. Its 600+ headline tracks the endpoint count rather than the deduplicated model count.",
       }),
       [
-        measured(708, BASELINE_DATE, {
-          sourceIds: ["baseline"],
-          note: "Project baseline figure, which counted addressable endpoints rather than deduplicated models.",
-        }),
         official("600+", DATASET_DATE, {
           sourceIds: ["site"],
-          note: "Vendor headline, which corresponds closely to the endpoint count rather than the deduplicated model count.",
+          note: "Vendor headline, which corresponds to the endpoint count rather than the deduplicated model count.",
+        }),
+        measured(545, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} The endpoint exposed 684 provider/model entries; 88 model names were served by more than one provider, and collapsing those left 545 distinct models.`,
+        }),
+        measured(708, BASELINE_DATE, {
+          sourceIds: ["baseline"],
+          note: "Project baseline figure, which counted addressable endpoints rather than deduplicated models. Preserved; never overwritten by the current grouped count.",
         }),
       ],
     ),
     providers: metric(
-      measured(33, DATASET_DATE, {
-        sourceIds: ["models-endpoint"],
-        note: "Distinct serving-provider prefixes in the public catalogue.",
+      listed(32, "official", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Provider count published on the vendor's catalogue page.",
       }),
       [
-        official("32", DATASET_DATE, {
-          sourceIds: ["docs"],
-          note: "Vendor-stated provider count, one lower than the measured prefix count.",
+        measured(33, MEASUREMENT_DATE, {
+          sourceIds: ["models-endpoint"],
+          note: "Distinct serving-provider prefixes in the public catalogue, one higher than the vendor's count.",
         }),
       ],
     ),
     endpoints: metric(
-      measured(684, DATASET_DATE, {
+      measured(684, MEASUREMENT_DATE, {
         sourceIds: ["models-endpoint"],
-        note: "Provider/model endpoints in the public catalogue. This matches the vendor's own published endpoint figure.",
+        note: "Provider/model endpoints in the public catalogue. This matches the 684 unique endpoints the vendor publishes on its catalogue page.",
       }),
     ),
-    pricingTransparency: field("public", "verified", {
-      note: "Per-model input, cached and output pricing is published in the public model endpoint.",
-      sources: ["models-endpoint"],
+    modalities: field(["llm", "vision", "image", "stt", "tts", "embeddings"], "vendor-stated", {
+      note: "The vendor lists LLM, vision, image, speech, transcription and embeddings.",
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Documented as an OpenAI-compatible API, and the public catalogue was read from an OpenAI-style /v1/models endpoint.",
+      sources: ["docs", "models-endpoint"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: field(["ISO/IEC 27001", "SOC 2 Type II"], "vendor-stated", {
+      sources: ["site", "research"],
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      note: "Per-model input, cached and output pricing is published in the public model endpoint; enterprise terms are quoted separately.",
+      sources: ["models-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
     strengths: [
-      "Unusually transparent about infrastructure: a named EU gateway location and a published subprocessor list, neither of which most entries here publish at all.",
-      "Largest measured LLM catalogue in the September 15, 2026 snapshot at 545 distinct models, served across 684 endpoints.",
-      "Real routing redundancy rather than one path per model: 88 of its models are served by more than one provider.",
+      "Unusually transparent catalogue: models, endpoints and providers are published as three separate figures (211, 684 and 32), which almost no other entry here does.",
+      "A named EU gateway on AWS in France and a published subprocessor list, alongside ISO/IEC 27001 and SOC 2 Type II.",
+      "Largest LLM catalogue measured by this project on September 15, 2026, at 545 distinct models across 684 endpoints.",
     ],
     limitations: [
       "UK-incorporated, so it does not qualify as an EU-incorporated vendor even though its gateway sits in the EU.",
-      "Its catalogue is published as provider/model endpoints, so the headline \u201c600+\u201d tracks the endpoint count rather than the deduplicated model count.",
+      "The 600+ headline tracks endpoints rather than deduplicated models; the vendor's own catalogue page puts unique models at 211.",
+      "A 2–10 person company, and no zero-data-retention position is stated.",
     ],
     bestFor: [
       "Teams that need EU gateway processing and want the subprocessor chain written down.",
     ],
     sources: [
+      researchSource(),
       baselineSource(),
       modelsEndpointSource("https://router.requesty.ai/v1/models"),
-      siteSource("https://www.requesty.ai"),
+      siteSource("https://www.requesty.ai/models"),
       docsSource("https://docs.requesty.ai"),
       registrySource("Companies House 15165717"),
       legalSource(),
+      linkedinSource("https://www.linkedin.com/company/requesty-ai/"),
+      xSource("RequestyAI"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -537,62 +590,103 @@ baselineSource(),
     slug: "orq-ai",
     name: "Orq.ai",
     website: "https://orq.ai",
+    logo: "/logos/orq-ai.svg",
     summary:
-      "A generative AI platform combining model access with experimentation, evaluation and deployment workflows.",
-    differentiator: "EU-incorporated gen-AI platform with evaluation tooling.",
+      "A generative AI gateway and control plane combining model access with routing, governance, observability, evaluation and agent tooling.",
+    differentiator:
+      "EU-native AI gateway and control plane combining routing, governance, observability and agent tooling.",
     type: "enterprise",
     tier: "primary",
-    categories: ["eu-gateways", "enterprise", "provider-networks"],
+    categories: ["provider-networks", "eu-gateways", "eu-hosted", "multimodal", "enterprise", "agent-gateways"],
     jurisdictionBucket: "eu",
     legalEntity: field("Orq.AI Holding B.V.", "verified", {
       note: "KVK number 88882179.",
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("Netherlands", "verified", { sources: ["registry"] }),
+    country: field("Netherlands", "verified", { sources: ["registry", "research"] }),
     countryCode: field("NL", "verified", { sources: ["registry"] }),
     city: field("Amsterdam", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
+    social: {
+      linkedinUrl: "https://www.linkedin.com/company/orqai/",
+      xUrl: "https://x.com/orq_ai",
+      linkedinFollowers: approxFollowers(7800, "LinkedIn"),
+      xFollowers: exactFollowers(326, "X"),
+      snapshotDate: DATASET_DATE,
+    },
     models: metric(
       official("500+", DATASET_DATE, {
-        sourceIds: ["site"],
+        sourceIds: ["site", "research"],
         note: "Vendor floor. No public model endpoint is exposed, so no measurement was possible.",
       }),
     ),
-    providers: metric(official("30+", DATASET_DATE, { sourceIds: ["site"] })),
-    modalities: field(["llm", "vision"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
-    certifications: field(["SOC 2", "ISO/IEC 27001"], "vendor-stated", {
+    providers: metric(official("30+", DATASET_DATE, { sourceIds: ["docs", "research"] })),
+    routes: metric(
+      notPublished("One unified API plus Model Context Protocol access; no route or endpoint count is published."),
+    ),
+    modalities: field(["llm", "vision", "embeddings", "image", "stt", "mcp"], "vendor-stated", {
+      note: "The vendor lists LLM, vision, code, embeddings, image, reasoning and speech, and documents Model Context Protocol access alongside its unified API. Code and reasoning are LLM capabilities rather than modalities in this taxonomy.",
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible API.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted", "vpc", "on-prem"], "vendor-stated", {
+      note: "Includes air-gapped on-premise deployment.",
+      sources: ["site", "research"],
+    }),
+    vpc: field("yes", "vendor-stated", { sources: ["site"] }),
+    onPrem: field("yes", "vendor-stated", {
+      note: "Air-gapped deployment is offered.",
+      sources: ["site"],
+    }),
+    gatewayLocations: field(["Amsterdam", "EU regions"], "vendor-stated", { sources: ["research"] }),
+    certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
       note: "The vendor also positions around GDPR and HIPAA. Those are regulatory regimes rather than certifications, so they are not listed here as certifications.",
       sources: ["site"],
     }),
-    euResidency: unverified(
-      "No primary evidence about where requests are processed has been read for this dataset. EU incorporation is never used as evidence of EU residency.",
-    ),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Not zero retention by default: the pricing page states 30-day retention as the default, so ZDR is recorded as configurable rather than as a blanket yes.",
+      sources: ["pricing", "research"],
+    }),
+    euResidency: field("eu-by-default", "vendor-stated", {
+      note: "Hosted in EU regions with EU sovereign hosting options, in addition to VPC and on-premise deployment.",
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["pricing", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "EU-incorporated with a registry-confirmed operating entity.",
-      "SOC 2 and ISO/IEC 27001 stated, alongside GDPR and HIPAA positioning.",
-      "Model access is coupled to experimentation and evaluation workflows rather than routing alone.",
+      "EU-incorporated with a registry-confirmed operating entity, EU-region hosting by default and sovereign hosting options.",
+      "Hosted, VPC, on-premise and air-gapped deployment documented, with SOC 2 Type II and ISO/IEC 27001 stated.",
+      "Model access is coupled to governance, observability, evaluation and agent workflows rather than routing alone.",
     ],
     limitations: [
       "No enumerable public catalogue, so the 500+ figure is a vendor floor rather than a measurement.",
-      "EU data residency is not established: being EU-incorporated is not evidence of where requests are processed.",
+      "Retention is 30 days by default according to the pricing page, so zero data retention is a setting rather than the baseline.",
+      "No route or endpoint count is published.",
     ],
     bestFor: [
-      "Teams that want model access and evaluation workflows in one EU-incorporated platform.",
+      "Teams that want model access, governance and evaluation workflows in one EU-incorporated platform.",
     ],
     sources: [
+      researchSource(),
       baselineSource(),
       siteSource("https://orq.ai"),
+      docsSource("https://orq.ai/llm-providers"),
+      pricingSource("https://orq.ai/pricing"),
       registrySource("KVK 88882179"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/orqai/"),
+      xSource("orq_ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -602,35 +696,44 @@ baselineSource(),
     slug: "cortecs",
     name: "Cortecs",
     website: "https://cortecs.ai",
+    logo: "/logos/cortecs.png",
     summary:
       "A managed LLM gateway routing requests across EU-based inference providers, positioned around EU-only processing.",
-    differentiator: "EU-only provider and inference posture, fully measurable.",
+    differentiator:
+      "European sovereign LLM router using exclusively EU-established inference providers.",
     type: "managed",
     tier: "primary",
-    categories: ["largest-model-catalogues", "eu-gateways", "eu-hosted", "provider-networks"],
+    categories: ["largest-model-catalogues", "provider-networks", "eu-gateways", "eu-hosted", "multimodal"],
     jurisdictionBucket: "eu",
     legalEntity: field("Cortecs GmbH", "verified", {
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("Austria", "verified", { sources: ["registry"] }),
+    country: field("Austria", "verified", { sources: ["registry", "research"] }),
     countryCode: field("AT", "verified", { sources: ["registry"] }),
-    city: field("Vienna", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    city: field("Vienna", "verified", { sources: ["registry", "linkedin"] }),
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
+    social: {
+      linkedinUrl: "https://www.linkedin.com/company/cortecs-ai/",
+      xUrl: null,
+      linkedinFollowers: exactFollowers(1190, "LinkedIn"),
+      xFollowers: unverified("No X account is publicly stated."),
+      snapshotDate: DATASET_DATE,
+    },
     models: metric(
-      measured(107, DATASET_DATE, {
-        scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: COUNT_RULE,
+      official("150+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Vendor catalogue figure across modalities on September 17, 2026. The LLM catalogue measured 107 models on September 15, 2026 and 105 on September 8.",
       }),
       [
+        measured(107, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: COUNT_RULE,
+        }),
         measured(105, BASELINE_DATE, {
           sourceIds: ["baseline"],
           note: "Project baseline measurement.",
@@ -638,57 +741,71 @@ baselineSource(),
       ],
     ),
     providers: metric(
-      measured(15, DATASET_DATE, {
-        sourceIds: ["models-endpoint"],
-        note: "The catalogue exposes 16 provider entries; Amazon appears twice for two EU regions, and the methodology counts a provider once regardless of region.",
+      official("14", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Active providers stated by the vendor, all EU-established.",
       }),
       [
-        official("14", DATASET_DATE, {
-          sourceIds: ["site"],
-          note: "Vendor-stated count of active providers.",
+        measured(15, MEASUREMENT_DATE, {
+          sourceIds: ["models-endpoint"],
+          note: "The catalogue exposed 16 provider entries; Amazon appears twice for two EU regions, and the methodology counts a provider once regardless of region.",
         }),
       ],
     ),
     routes: metric(
-      measured(196, DATASET_DATE, {
+      measured(196, MEASUREMENT_DATE, {
         sourceIds: ["models-endpoint"],
-        note: "Model x provider combinations across the public catalogue.",
+        note: "Model x provider combinations across the public catalogue. A project measurement; the vendor publishes no route count.",
       }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    modalities: field(["llm", "vision", "embeddings", "audio", "stt"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Documented as OpenAI-compatible, and the public catalogue was read from an OpenAI-style /v1/models endpoint.",
+      sources: ["site", "models-endpoint"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["Vienna", "EU sovereign cloud"], "vendor-stated", {
+      sources: ["research"],
+    }),
     certifications: field(["ISO/IEC 27001"], "vendor-stated", { sources: ["site"] }),
+    zeroDataRetention: field("yes", "vendor-stated", { sources: ["site", "research"] }),
     euResidency: field("eu-by-default", "vendor-stated", {
       note: "Positioned as EU-only for both the gateway and the upstream providers it routes to, with no region selection required.",
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    inferenceLocations: field(["EU only, via EU-based providers"], "vendor-stated", {
+    inferenceLocations: field(["EU only, via EU-established providers"], "vendor-stated", {
       sources: ["site"],
     }),
-    pricingTransparency: field("public", "verified", {
-      note: "Per-model pricing is published in the public model endpoint.",
-      sources: ["models-endpoint"],
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      note: "Per-model pricing is published in the public model endpoint; enterprise terms are quoted separately.",
+      sources: ["models-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "The strongest EU-only posture in this dataset: EU incorporation, EU gateway and EU-based upstream providers, rather than an EU option layered onto a global network.",
-      "Catalogue is publicly enumerable, so its 107-model count on September 15, 2026 is a measurement rather than a claim.",
-      "ISO/IEC 27001 stated.",
+      "The strongest EU-only posture in this dataset: EU incorporation, EU gateway and exclusively EU-established upstream providers, rather than an EU option layered onto a global network.",
+      "Catalogue is publicly enumerable, so its 107-model LLM count on September 15, 2026 is a measurement rather than a claim, and its 196 routes were counted the same way.",
+      "Zero data retention and ISO/IEC 27001 stated.",
     ],
     limitations: [
-      "Smallest measured catalogue in the September 15, 2026 snapshot at 107 models — the trade-off for routing only to EU-based providers.",
-      "15 measured upstream providers, well below the largest networks here.",
+      "Smallest measured LLM catalogue in the September 15, 2026 snapshot at 107 models — the trade-off for routing only to EU-established providers.",
+      "14 stated upstream providers, well below the largest networks here.",
     ],
     bestFor: [
-      "Teams whose requirement is that inference itself stays with EU-based providers, not only the gateway.",
+      "Teams whose requirement is that inference itself stays with EU-established providers, not only the gateway.",
     ],
     sources: [
+      researchSource(),
       baselineSource(),
       modelsEndpointSource("https://api.cortecs.ai/v1/models"),
       siteSource("https://cortecs.ai"),
       registrySource("Austrian company register — Cortecs GmbH"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/cortecs-ai/"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -697,118 +814,186 @@ baselineSource(),
     id: "eurouter",
     slug: "eurouter",
     name: "EUrouter",
-    website: null,
+    website: "https://www.eurouter.ai",
+    logo: "/logos/eurouter.png",
     summary:
-      "An EU-incorporated model router built around EU-only processing, offering a smaller curated catalogue rather than the widest possible one.",
-    differentiator: "EU-only by design, with a registry-confirmed Dutch entity.",
+      "An EU-incorporated model router built around EU-only infrastructure, offering a smaller curated catalogue rather than the widest possible one.",
+    differentiator:
+      "EU-only AI router emphasizing European infrastructure and provider/data sovereignty.",
     type: "managed",
     tier: "primary",
-    categories: ["eu-gateways", "eu-hosted", "provider-networks"],
+    categories: ["provider-networks", "eu-gateways", "eu-hosted"],
     jurisdictionBucket: "eu",
     legalEntity: field("EUrouter B.V.", "verified", {
-      note: "KVK number 42054357.",
-      sources: ["registry"],
+      note: "KVK number 42054357, also printed on the vendor's own site.",
+      sources: ["registry", "site"],
       asOf: DATASET_DATE,
     }),
-    country: field("Netherlands", "verified", { sources: ["registry"] }),
+    country: field("Netherlands", "verified", { sources: ["registry", "research"] }),
     countryCode: field("NL", "verified", { sources: ["registry"] }),
     city: field("Amsterdam", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
-    productStatus: field("active", "verified"),
-    employees: field({ band: "2-10", min: 2, max: 10 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
+    productStatus: field("active", "verified", { sources: ["site"] }),
+    employees: employees("2-10"),
+    social: {
+      linkedinUrl: "https://www.linkedin.com/company/eurouter/",
+      xUrl: null,
+      linkedinFollowers: exactFollowers(333, "LinkedIn"),
+      xFollowers: unverified("No X account is publicly stated."),
+      snapshotDate: DATASET_DATE,
+    },
+    models: metric(
+      listed(147, "catalogue", DATASET_DATE, {
+        scope: "llm",
+        sourceIds: ["site", "research"],
+        note: "Count on the official model page. Marketing copy states 100+. No public model endpoint was reachable for measurement.",
+      }),
+      [
+        official("100+", DATASET_DATE, {
+          sourceIds: ["site"],
+          note: "Marketing floor on the vendor's site.",
+        }),
+      ],
+    ),
+    providers: metric(official("15", DATASET_DATE, { sourceIds: ["site", "research"] })),
+    routes: metric(notPublished("Multiple providers per model; no route or endpoint count is published.")),
+    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE, sources: ["site", "research"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor markets a unified API compatible with OpenAI clients.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["Amsterdam", "EU"], "vendor-stated", { sources: ["research"] }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: field("eu-by-default", "vendor-stated", {
+      note: "The vendor describes its infrastructure as EU-only by design, with no region selection step.",
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
-    models: metric(
-      official("147", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Vendor-published figure. No public model endpoint was reachable for measurement.",
-      }),
-    ),
-    providers: metric(official("15", DATASET_DATE, { sourceIds: ["site"] })),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "EU-only architecture is the product's design premise rather than a configuration option.",
-      "Registry-confirmed Dutch operating entity.",
-      "Clear about the size of its catalogue instead of implying global breadth.",
+      "Registry-confirmed Dutch operating entity, with the KVK number printed on its own site.",
+      "Clear about the size of its catalogue — 147 models across 15 providers — instead of implying global breadth.",
     ],
     limitations: [
-      "147 models and 15 providers — a deliberately smaller catalogue than the global routers here.",
-      "No public model endpoint was enumerated, so the model count is vendor-stated rather than measured.",
-      "The official product URL has not been confirmed for this dataset, so no link is published.",
+      "A deliberately smaller catalogue than the global routers here, and no public model endpoint was enumerated, so the count is taken from the vendor's model page.",
+      "No certifications or zero-data-retention position are publicly stated, and no X presence was found.",
+      "The research pass cited eu-router.ai, which did not resolve when checked; the operating site is eurouter.ai, which carries the same company registration.",
     ],
     bestFor: ["EU buyers who value a sovereignty-first architecture over catalogue size."],
-    sources: [baselineSource(), registrySource("KVK 42054357"), vendorMaterialSource()],
+    sources: [
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.eurouter.ai"),
+      registrySource("KVK 42054357"),
+      linkedinSource("https://www.linkedin.com/company/eurouter/"),
+    ],
     lastVerified: DATASET_DATE,
   }),
 
   createGateway({
     id: "opper",
     slug: "opper",
-    name: "Opper",
+    name: "Opper AI",
     website: "https://opper.ai",
+    logo: "/logos/opper.png",
     summary:
       "A Swedish managed API for building and running model-backed tasks and agents across multiple upstream providers, hosted in the EU.",
-    differentiator: "EU-hosted agent gateway running on AWS Stockholm.",
+    differentiator:
+      "EU-hosted AI gateway for agents with 700+ models, smart routing, fallbacks and regional controls.",
     type: "managed",
     tier: "primary",
-    categories: ["eu-gateways", "eu-hosted", "agent-gateways", "provider-networks"],
+    categories: ["provider-networks", "eu-gateways", "eu-hosted", "multimodal"],
     jurisdictionBucket: "eu",
     legalEntity: field("Opper Technology AB", "verified", {
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("Sweden", "verified", { sources: ["registry"] }),
+    country: field("Sweden", "verified", { sources: ["registry", "research"] }),
     countryCode: field("SE", "verified", { sources: ["registry"] }),
     city: field("Stockholm", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
+    social: {
+      linkedinUrl: "https://www.linkedin.com/company/opper-ai",
+      xUrl: "https://x.com/opperai",
+      linkedinFollowers: approxFollowers(1700, "LinkedIn"),
+      xFollowers: exactFollowers(80, "X"),
+      snapshotDate: DATASET_DATE,
+    },
     models: metric(
-      conflicting(
-        "The vendor publishes both 700+ and 300+ in its own material. Neither figure is measurable from a public endpoint, and neither is presented here as settled.",
-      ),
+      official("700+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Figure marketed on the product page. The provider directory lists 893 catalogue models and entries, which include duplicates across providers; 700+ is used as the comparable deduplicated headline.",
+      }),
       [
-        official("700+", DATASET_DATE, { sourceIds: ["site"] }),
-        official("300+", DATASET_DATE, { sourceIds: ["site"] }),
+        official("300+", MEASUREMENT_DATE, {
+          sourceIds: ["site"],
+          note: "Earlier vendor figure recorded in the previous revision, preserved rather than deleted.",
+        }),
       ],
     ),
-    providers: metric(official("30+", DATASET_DATE, { sourceIds: ["site"] })),
-    modalities: field(["llm", "agents"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
-    gatewayLocations: field(["AWS Stockholm (eu-north-1)"], "vendor-stated", {
-      sources: ["site"],
-    }),
-    euResidency: field("eu-by-default", "vendor-stated", {
-      note: "Hosted in the EU on AWS Stockholm, without a region selection step.",
-      sources: ["site"],
+    providers: metric(
+      listed(44, "catalogue", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Providers listed in the vendor's provider directory. The product page markets 40+.",
+      }),
+      [official("40+", DATASET_DATE, { sourceIds: ["site"] })],
+    ),
+    routes: metric(notPublished("Multiple routes per model; no route or endpoint count is published.")),
+    modalities: field(["llm", "image", "audio", "video"], "vendor-stated", {
+      note: "The vendor lists LLM, image, voice and video; voice is recorded as audio.",
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
-    zeroDataRetention: field("yes", "vendor-stated", {
-      note: "Zero-data-retention is part of the vendor's published positioning.",
-      sources: ["site"],
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible gateway endpoint.",
+      sources: ["docs", "research"],
     }),
+    deployment: field(["hosted"], "vendor-stated", {
+      note: "Hosted, with bring-your-own-key routing.",
+      sources: ["research"],
+    }),
+    byok: field("yes", "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["Stockholm", "AWS EU and US routes"], "vendor-stated", {
+      sources: ["site", "research"],
+    }),
+    euResidency: field("eu-by-default", "vendor-stated", {
+      note: "Hosted in the EU on AWS Stockholm without a region selection step; US routes are also offered for specific providers.",
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Route dependent: retention behaviour follows the selected route rather than applying to every request.",
+      sources: ["research"],
+    }),
+    certifications: noCertifications(),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "EU-hosted by default on named infrastructure — AWS Stockholm — rather than an unspecified EU region.",
-      "Largest vendor-stated catalogue among the EU-incorporated gateways here, at 700+.",
-      "Task and agent oriented API surface rather than raw routing, with zero-data-retention positioning.",
+      "Largest vendor-stated catalogue among the EU-incorporated gateways here at 700+ models, with 44 providers listed in its directory.",
+      "Task and agent oriented API surface with smart routing and fallbacks, and bring-your-own-key support.",
     ],
     limitations: [
-      "The vendor's own material states both 700+ and 300+ models; the conflict is unresolved and neither figure is measured.",
-      "No enumerable public catalogue, so no measured count exists.",
+      "No enumerable public catalogue, so the 700+ figure is a vendor headline rather than a measurement; the vendor previously published 300+.",
+      "No certifications are publicly stated, and zero data retention depends on the route.",
     ],
     bestFor: ["EU teams building agent workloads that must stay on EU infrastructure."],
     sources: [
+      researchSource(),
       baselineSource(),
-      siteSource("https://opper.ai"),
+      siteSource("https://opper.ai/llm-gateway"),
+      docsSource("https://opper.ai/providers"),
       registrySource("Bolagsverket — Opper Technology AB"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/opper-ai"),
+      xSource("opperai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -818,40 +1003,57 @@ baselineSource(),
     slug: "nexos-ai",
     name: "nexos.ai",
     website: "https://nexos.ai",
+    logo: "/logos/nexos-ai.png",
     summary:
-      "An EU-incorporated AI gateway and control layer positioned around governance, access control and visibility for larger organisations.",
+      "An EU-incorporated AI gateway and control layer positioned around spend control, governance, access control and visibility for larger organisations.",
     differentiator:
-      "Largest company scale and broadest certification set among EU-incorporated entries.",
+      "EU-hosted enterprise AI gateway focused on spend control, governance and zero-retention access to 200+ models.",
     type: "enterprise",
     tier: "primary",
-    categories: ["eu-gateways", "eu-hosted", "enterprise"],
+    categories: ["eu-gateways", "eu-hosted", "multimodal", "enterprise", "agent-gateways"],
     jurisdictionBucket: "eu",
     legalEntity: field("Spectra Tech, UAB", "verified", {
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("Lithuania", "verified", { sources: ["registry"] }),
+    country: field("Lithuania", "verified", { sources: ["registry", "research"] }),
     countryCode: field("LT", "verified", { sources: ["registry"] }),
-    city: field("Vilnius", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    city: field("Vilnius", "verified", { sources: ["registry", "linkedin"] }),
+    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "51-200", min: 51, max: 200 }, "verified", {
-      note: "LinkedIn company-size band — the largest of any EU-incorporated entry in this dataset.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "51-200",
+      "LinkedIn company-size band — the largest of any EU-incorporated entry in this dataset.",
+    ),
+    social: {
+      linkedinUrl: "https://www.linkedin.com/company/nexos-ai/",
+      xUrl: "https://x.com/nexos_ai",
+      linkedinFollowers: approxFollowers(16600, "LinkedIn"),
+      xFollowers: exactFollowers(165, "X"),
+      snapshotDate: DATASET_DATE,
+    },
     models: metric(
       official("200+", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Vendor floor. The product is sold through an enterprise motion and exposes no public catalogue endpoint.",
+        sourceIds: ["site", "research"],
+        note: "Vendor floor for models reachable through one OpenAI-compatible endpoint. The product exposes no public catalogue endpoint.",
       }),
     ),
     providers: metric(
       notPublished("No upstream provider count is published in the vendor's public material."),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    routes: metric(notPublished("Multiple routes behind one endpoint; no route or endpoint count is published.")),
+    modalities: field(["llm", "image", "agents"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["site", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor states that 200+ models are reachable through one OpenAI-compatible API endpoint.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["Vilnius", "EU"], "vendor-stated", { sources: ["research"] }),
     certifications: field(
       ["ISO/IEC 27001", "ISO/IEC 42001", "SOC 2 Type II"],
       "vendor-stated",
@@ -862,31 +1064,39 @@ baselineSource(),
     ),
     euResidency: field("eu-by-default", "vendor-stated", {
       note: "Positioned as EU-hosted without a region selection step.",
-      sources: ["site"],
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
-    zeroDataRetention: field("yes", "vendor-stated", { sources: ["site"] }),
-    pricingTransparency: field("contact-sales", "vendor-stated", {
-      note: "Enterprise, sales-led positioning rather than published self-serve pricing.",
-      sources: ["site"],
+    zeroDataRetention: field("yes", "vendor-stated", {
+      note: "Zero-retention access is part of the vendor's published positioning.",
+      sources: ["site", "research"],
     }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      note: "A public pricing page is published; enterprise terms are quoted separately.",
+      sources: ["pricing", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "Largest company scale of any EU-incorporated entry here, at 51–200 employees.",
       "Broadest certification set in the EU-incorporated group, and the only entry stating ISO/IEC 42001.",
-      "EU-hosted by default, with zero-data-retention positioning.",
+      "EU-hosted by default, with zero-retention positioning and a public pricing page.",
     ],
     limitations: [
-      "Enterprise, sales-led positioning: no published self-serve pricing to evaluate.",
       "200+ models is a vendor floor, and no public endpoint was enumerated for a measured count.",
+      "No upstream provider count or route count is published.",
     ],
     bestFor: [
-      "Larger organisations that need governance and access control over internal AI use, from an EU vendor.",
+      "Larger organisations that need governance, spend control and access control over internal AI use, from an EU vendor.",
     ],
     sources: [
+      researchSource(),
       baselineSource(),
       siteSource("https://nexos.ai"),
+      pricingSource("https://nexos.ai/pricing/"),
       registrySource("Lithuanian register of legal entities — Spectra Tech, UAB"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/nexos-ai/"),
+      xSource("nexos_ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -895,78 +1105,102 @@ baselineSource(),
     id: "edgee",
     slug: "edgee",
     name: "Edgee",
-    website: "https://www.edgee.cloud",
+    website: "https://www.edgee.ai",
+    logo: "/logos/edgee.svg",
     summary:
-      "An edge computing platform whose AI gateway component routes model requests from edge locations, with on-premise and air-gapped deployment options.",
-    differentiator: "Agent gateway with air-gapped deployment; corporate structure unresolved.",
+      "An agent gateway that routes model requests across a large set of provider routes, with hosted, on-premise and air-gapped deployment options.",
+    differentiator:
+      "Agent gateway with model routing, provider-route diversity and air-gapped deployment.",
     type: "managed",
     tier: "primary",
-    categories: ["agent-gateways", "enterprise", "provider-networks"],
+    categories: ["provider-networks", "enterprise", "agent-gateways"],
     jurisdictionBucket: "unresolved",
     country: unverified(
-      "Evidence points to both a French and a United States entity. The conflict is unresolved, so no jurisdiction is assigned and the entry is not counted as EU-incorporated.",
+      "The research pass records a French presence with an unresolved corporate structure, and earlier evidence pointed to both a French and a United States entity. No jurisdiction is assigned, and the entry is not counted as EU-incorporated.",
     ),
-    legalEntity: unverified("Not established. French and US entity evidence conflicts."),
-    euJurisdiction: unverified(
-      "Cannot be determined while the operating entity is unresolved.",
-    ),
+    legalEntity: unverified("Not established. The corporate structure is unresolved."),
+    euJurisdiction: unverified("Cannot be determined while the operating entity is unresolved."),
+    ownershipStatus: unverified("Not established while the corporate structure is unresolved."),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "2-10", min: 2, max: 10 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("2-10"),
     social: {
-      linkedinUrl: null,
-      xUrl: null,
-      linkedinFollowers: field(2019, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: unverified(
-        "No X follower count was found for this company.",
-      ),
+      linkedinUrl: "https://www.linkedin.com/company/edgee-ai/",
+      xUrl: "https://x.com/edgee_ai",
+      linkedinFollowers: approxFollowers(2000, "LinkedIn"),
+      xFollowers: exactFollowers(46, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      official("223", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Vendor-published model figure, quoted alongside a separate route count.",
+      listed(223, "catalogue", DATASET_DATE, {
+        scope: "llm",
+        sourceIds: ["site", "research"],
+        note: "Count on the official models page, published alongside a separate provider-route figure.",
       }),
     ),
-    providers: metric(official("25+", DATASET_DATE, { sourceIds: ["site"] })),
+    providers: metric(
+      listed(60, "catalogue", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "The vendor's routing page lists 60 'provider routes'. The site uses route terminology differently across pages, so the vendor's label is preserved rather than converted into a mathematical provider count.",
+      }),
+      [
+        official("25+", MEASUREMENT_DATE, {
+          sourceIds: ["site"],
+          note: "Provider floor recorded in the previous revision.",
+        }),
+      ],
+    ),
     routes: metric(
-      official("972", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Model x provider combinations. Published by the vendor as a separate figure from its model count.",
+      listed(972, "official", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Provider routes listed on the official models page, published separately from the 223-model figure.",
       }),
     ),
-    modalities: field(["llm", "agents"], "vendor-stated", { note: VENDOR_NOTE }),
+    modalities: field(["llm", "agents"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["site", "research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible gateway API.",
+      sources: ["site", "research"],
+    }),
     deployment: field(["hosted", "on-prem"], "vendor-stated", {
       note: "Includes air-gapped on-premise deployment.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
     onPrem: field("yes", "vendor-stated", {
       note: "Air-gapped deployment is offered.",
       sources: ["site"],
     }),
+    gatewayLocations: field(["Paris", "EU / customer deployment"], "vendor-stated", {
+      sources: ["research"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
     certifications: field(["SOC 2"], "vendor-stated", {
-      note: "The vendor also positions around GDPR, which is a regulation rather than a certification.",
+      note: "Claimed by the vendor. The vendor also positions around GDPR, which is a regulation rather than a certification.",
       sources: ["site"],
+    }),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
     }),
     strengths: [
       "One of the few entries offering air-gapped on-premise deployment, which removes the vendor from the request path entirely.",
-      "Publishes models and routes as separate figures — 223 models across 972 routes — rather than conflating them.",
-      "Agent gateway positioning, with edge placement as an explicit product concern.",
+      "Publishes models and routes as separate figures — 223 models across 972 provider routes — rather than conflating them.",
+      "Agent gateway positioning, with provider-route diversity as an explicit product concern.",
     ],
     limitations: [
-      "The operating entity is unresolved between French and US evidence, so it is not counted as EU-incorporated despite its European presence.",
-      "Model and route counts are vendor-stated; no public endpoint was enumerated.",
+      "The corporate structure is unresolved, so it is not counted as EU-incorporated despite its Paris presence, and ownership cannot be recorded.",
+      "Model and route counts are taken from the vendor's own pages; no public endpoint was enumerated, and the site uses 'route' to mean different things on different pages.",
+      "No EU residency claim or zero-data-retention position is stated.",
     ],
     bestFor: ["Teams that need the gateway inside their own perimeter, including air-gapped."],
     sources: [
-      baselineSource(), siteSource("https://www.edgee.cloud"),
-      linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.edgee.ai/models"),
+      docsSource("https://www.edgee.ai/routing"),
+      linkedinSource("https://www.linkedin.com/company/edgee-ai/"),
+      xSource("edgee_ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -976,53 +1210,50 @@ baselineSource(),
     slug: "aiml-api",
     name: "AI/ML API",
     website: "https://aimlapi.com",
+    logo: "/logos/aiml-api.png",
     summary:
-      "A multi-provider API offering text, image, video and audio models behind one OpenAI-compatible interface.",
+      "A multi-provider API offering text, image, video and audio models behind OpenAI- and Anthropic-compatible interfaces.",
     differentiator:
-      "Largest measured catalogue once every modality is counted.",
+      "Large multimodal model API with OpenAI/Anthropic-compatible interfaces and a broad catalogue.",
     type: "managed",
     tier: "primary",
     categories: ["largest-model-catalogues", "multimodal"],
     jurisdictionBucket: "other",
     legalEntity: field("Boiler Labs FZ-LLC", "verified", {
-      note: "Recorded in the September 8, 2026 legal baseline. Separately, the published terms name Estonian governing law, which does not match the UAE registration; the two observations are recorded side by side rather than reconciled.",
-      sources: ["baseline", "legal"],
-      asOf: BASELINE_DATE,
+      note: "Recorded in the September 8, 2026 legal baseline and confirmed by the September 17 research pass. Separately, the published terms name Estonian governing law, which does not match the UAE registration; the two observations are recorded side by side rather than reconciled.",
+      sources: ["baseline", "legal", "research"],
+      asOf: DATASET_DATE,
     }),
     country: field("United Arab Emirates", "verified", {
       note: "Country of registration of the operating entity.",
-      sources: ["baseline"],
-      asOf: BASELINE_DATE,
+      sources: ["baseline", "research"],
+      asOf: DATASET_DATE,
     }),
     countryCode: field("AE", "verified", { sources: ["baseline"] }),
     euJurisdiction: field(false, "verified", { sources: ["baseline"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/aimlapi/",
       xUrl: "https://x.com/aimlapi",
-      linkedinFollowers: field(1841, "estimated", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(3300, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(1900, "LinkedIn"),
+      xFollowers: approxFollowers(3300, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      measured(369, DATASET_DATE, {
-        scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} Restricted to chat, messages and responses endpoints so the figure is comparable with the other LLM catalogues here.`,
+      official("400+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["site", "research"],
+        note: "Vendor headline across every modality on September 17, 2026. This project measured 369 LLM models and 790 models across all endpoint types on September 15, 2026, and 937 in the September 8 baseline.",
       }),
       [
-        measured(790, DATASET_DATE, {
+        measured(369, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} Restricted to chat, messages and responses endpoints so the figure is comparable with the other LLM catalogues here.`,
+        }),
+        measured(790, MEASUREMENT_DATE, {
           scope: "all-modalities",
           sourceIds: ["models-endpoint"],
           note: "Distinct model identifiers across every endpoint type, including image, video, speech, OCR and embedding models.",
@@ -1034,38 +1265,54 @@ baselineSource(),
       ],
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      notPublished("Multiple upstream providers; no provider count is published in the vendor's public material."),
     ),
+    routes: metric(notPublished("Variable per model; no route count is published.")),
     endpoints: metric(
-      measured(943, DATASET_DATE, {
+      measured(943, MEASUREMENT_DATE, {
         sourceIds: ["models-endpoint"],
-        note: "Model x endpoint-type entries. A model that supports both image generation and image editing appears twice.",
+        note: "Model x endpoint-type entries. A model that supports both image generation and image editing appears twice. A project measurement; the vendor publishes no endpoint total.",
       }),
     ),
     modalities: field(
       ["llm", "vision", "image", "video", "stt", "tts", "embeddings"],
       "vendor-stated",
-      { note: VENDOR_NOTE, sources: ["site"] },
+      { note: VENDOR_NOTE, sources: ["site", "research"], asOf: DATASET_DATE },
     ),
-    deployment: field(["hosted"], "vendor-stated"),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["AWS Stockholm / global"], "vendor-stated", {
+      sources: ["research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor describes OpenAI and Anthropic compatibility. Endpoint-by-endpoint coverage has not been checked for this dataset.",
+      sources: ["site", "research"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "790 distinct models measured across every endpoint type on September 15, 2026 — the largest measured catalogue here once image, video, speech and embedding models are included.",
       "369 of those are LLM models, the second-largest measured LLM catalogue in this dataset.",
-      "Publishes its catalogue as an enumerable endpoint, so the figures are measurable rather than claimed.",
+      "Publishes its catalogue as an enumerable endpoint, so the figures are measurable rather than claimed, with OpenAI and Anthropic compatibility documented.",
     ],
     limitations: [
-      "Operating entity is registered in the UAE, which is material for EU procurement.",
-      "The published terms name Estonian governing law while the entity is UAE-registered; that inconsistency is unresolved.",
-      "EU data residency is not established in this dataset.",
+      "Operating entity is registered in the UAE, which is material for EU procurement, and the published terms name Estonian governing law — an unresolved inconsistency.",
+      "No EU residency claim, zero-data-retention position or certifications are publicly stated.",
+      "No upstream provider count is published.",
     ],
     bestFor: [
       "Teams that need broad multimodal catalogue access without an EU-entity requirement.",
     ],
     sources: [
+      researchSource(),
       baselineSource(),
       modelsEndpointSource("https://api.aimlapi.com/models"),
       siteSource("https://aimlapi.com"),
       legalSource(),
+      linkedinSource("https://www.linkedin.com/company/aimlapi/"),
+      xSource("aimlapi"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1075,44 +1322,44 @@ baselineSource(),
     slug: "llmgateway",
     name: "llmgateway.io",
     website: "https://llmgateway.io",
+    logo: "/logos/llmgateway.png",
     summary: "An LLM gateway routing requests across multiple upstream model providers.",
-    differentiator: "Small US-registered team with an openly enumerable catalogue.",
+    differentiator:
+      "Publicly enumerable multi-provider LLM gateway with transparent model/provider catalogue.",
     type: "managed",
     tier: "primary",
-    categories: ["largest-model-catalogues"],
+    categories: ["largest-model-catalogues", "provider-networks"],
     jurisdictionBucket: "us",
     legalEntity: field("Polar Lights LLC", "verified", {
       sources: ["registry"],
       asOf: DATASET_DATE,
     }),
-    country: field("United States", "verified", { sources: ["registry"] }),
+    country: field("United States", "verified", { sources: ["registry", "research"] }),
     countryCode: field("US", "verified", { sources: ["registry"] }),
     city: field("Lewes, Delaware", "verified", { sources: ["registry"] }),
     euJurisdiction: field(false, "verified", { sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "2-10", min: 2, max: 10 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("2-10"),
     social: {
-      linkedinUrl: null,
-      xUrl: null,
-      linkedinFollowers: field(33, "estimated", {
-        note: "Approximate LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: unverified(OPEN_FIELD),
+      linkedinUrl: "https://www.linkedin.com/company/llmgateway/",
+      xUrl: "https://x.com/llmgateway",
+      linkedinFollowers: exactFollowers(33, "LinkedIn"),
+      xFollowers: unverified("The X account exists but its follower count was not verified."),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      measured(269, DATASET_DATE, {
+      listed(493, "catalogue", DATASET_DATE, {
         scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} The endpoint returned 271 entries, two of which are the pseudo-models "auto" and "custom".`,
+        sourceIds: ["site", "research"],
+        note: "Count on the current provider page, which lists 493 models across 46 providers. This is a current catalogue and is not to be confused with the public endpoint measurements of 269 (September 15, 2026) and 258 (September 8).",
       }),
       [
+        measured(269, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} The endpoint returned 271 entries, two of which are the pseudo-models "auto" and "custom".`,
+        }),
         measured(258, BASELINE_DATE, {
           sourceIds: ["baseline"],
           note: "Project baseline measurement.",
@@ -1120,40 +1367,58 @@ baselineSource(),
       ],
     ),
     providers: metric(
-      measured(52, DATASET_DATE, {
-        sourceIds: ["models-endpoint"],
-        note: "Distinct upstream providers named across the catalogue, excluding the gateway's own entry.",
+      listed(46, "official", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Providers listed on the current provider page.",
       }),
+      [
+        measured(52, MEASUREMENT_DATE, {
+          sourceIds: ["models-endpoint"],
+          note: "Distinct upstream providers named across the public catalogue, excluding the gateway's own entry.",
+        }),
+      ],
     ),
     routes: metric(
-      measured(571, DATASET_DATE, {
+      measured(571, MEASUREMENT_DATE, {
         sourceIds: ["models-endpoint"],
-        note: "Model x provider combinations across the public catalogue.",
+        note: "Model x provider combinations across the public catalogue. A project measurement; the vendor publishes no route count.",
       }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE, sources: ["site", "research"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Documented as OpenAI-compatible, and the public catalogue was read from an OpenAI-style /v1/models endpoint.",
+      sources: ["site", "models-endpoint"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["United States"], "vendor-stated", { sources: ["research"] }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: residencyNotStated(),
     pricingTransparency: field("public", "verified", {
       note: "Per-model pricing is published in the public model endpoint.",
-      sources: ["models-endpoint"],
+      sources: ["models-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "Catalogue is publicly enumerable and was measured at 269 models on September 15, 2026, across 52 upstream providers.",
-      "Publishes per-model provider routes, so its 571 routes can be counted rather than estimated.",
+      "Transparent catalogue: the provider page lists 493 models across 46 providers, and the public endpoint let this project measure 269 models, 52 providers and 571 routes on September 15, 2026.",
+      "Publishes per-model provider routes, so route counts can be measured rather than estimated.",
       "Operating entity is registry-confirmed, which several larger entries here are not.",
     ],
     limitations: [
       "A 2–10 person company, which is material when assessing operational risk.",
-      "Current provider and model figures are not published under a stated definition, so they are left open rather than guessed.",
+      "The catalogue page (493) and the public endpoint (269) count different things, and the vendor does not publish the definition behind either.",
+      "No EU residency claim, zero-data-retention position or certifications are publicly stated.",
     ],
     bestFor: [],
     sources: [
+      researchSource(),
       baselineSource(),
       modelsEndpointSource("https://api.llmgateway.io/v1/models"),
-      siteSource("https://llmgateway.io"),
+      siteSource("https://llmgateway.io/providers"),
       registrySource("Delaware Division of Corporations — Polar Lights LLC"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/llmgateway/"),
+      xSource("llmgateway"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1163,77 +1428,93 @@ baselineSource(),
     slug: "novita-ai",
     name: "Novita AI",
     website: "https://novita.ai",
+    logo: "/logos/novita-ai.png",
     summary:
       "An inference platform offering hosted open models across text, image, video and audio, plus GPU capacity.",
-    differentiator: "Open-model inference platform with its own serving stack.",
+    differentiator:
+      "Hosted inference platform for open models across text, image, video and audio.",
     type: "managed",
     tier: "primary",
     categories: ["largest-model-catalogues", "multimodal"],
     jurisdictionBucket: "unresolved",
     country: unverified(
-      "No operating entity or country of registration has been established. None is assumed.",
+      "The company operates from the United States and globally, but no operating entity or country of incorporation has been established from a registry or legal page. Incorporation is not inferred from operating locations.",
     ),
+    legalEntity: unverified("No operating entity has been established."),
+    euJurisdiction: unverified("Cannot be determined while the operating entity is unresolved."),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/novita-labs/",
       xUrl: "https://x.com/novita_labs",
-      linkedinFollowers: field(2546, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(6000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: floorFollowers(2500, "LinkedIn"),
+      xFollowers: approxFollowers(6000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      measured(117, DATASET_DATE, {
-        scope: "llm",
-        sourceIds: ["models-endpoint"],
-        note: `${COUNT_RULE} Counted from the OpenAI-compatible model endpoint, which covers the text catalogue; image, video and audio models are served through separate APIs that are not enumerable in the same way.`,
+      official("200+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["site", "research"],
+        note: "Vendor headline across text, image, video and audio on September 17, 2026. The public OpenAI-compatible endpoint measured 117 text models on September 15, 2026 and 156 on September 8.",
       }),
       [
+        measured(117, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} Counted from the OpenAI-compatible model endpoint, which covers the text catalogue; image, video and audio models are served through separate APIs that are not enumerable in the same way.`,
+        }),
         measured(156, BASELINE_DATE, {
           sourceIds: ["baseline"],
-          note: "Project baseline measurement. The catalogue has since contracted.",
+          note: "Project baseline measurement.",
         }),
       ],
     ),
     providers: metric(
-      notComparable(
-        "Novita serves open-weight models on its own infrastructure rather than brokering third-party provider APIs, so an upstream provider count does not describe this product.",
+      notPublished(
+        "No upstream provider count is published. Novita serves open-weight models on its own infrastructure rather than brokering third-party provider APIs, so the figure would describe model families rather than upstream providers.",
       ),
     ),
+    routes: metric(notPublished("Multiple serving paths; no route or endpoint count is published.")),
     modalities: field(["llm", "image", "video", "stt", "tts"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["site"],
-    }),
-    deployment: field(["hosted"], "vendor-stated"),
-    pricingTransparency: field("public", "verified", {
-      note: "Per-million-token input and output pricing is published in the public model endpoint.",
-      sources: ["models-endpoint"],
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["United States / global"], "vendor-stated", {
+      sources: ["research"],
+    }),
+    zeroDataRetention: field("yes", "vendor-stated", { sources: ["research"] }),
+    certifications: field(["SOC 2"], "vendor-stated", { sources: ["site", "research"] }),
+    euResidency: unverified(
+      "Not established. No residency claim has been read from the vendor's own documentation for this dataset.",
+    ),
+    pricingTransparency: field("public", "verified", {
+      note: "Per-million-token input and output pricing is published in the public model endpoint.",
+      sources: ["models-endpoint", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "verified", {
+      note: "The model catalogue was measured from the vendor's OpenAI-compatible endpoint (/openai/v1/models), so compatibility of that surface is directly observed. Coverage of other endpoints has not been checked.",
+      sources: ["models-endpoint"],
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "117 text models measured from its public endpoint on September 15, 2026, down from 156 a week earlier.",
-      "Serves open-weight models directly rather than only brokering other providers' APIs.",
+      "117 text models measured from its public endpoint on September 15, 2026, with a 200+ headline across text, image, video and audio.",
+      "Serves open-weight models directly rather than only brokering other providers' APIs, with SOC 2 and zero data retention stated.",
     ],
     limitations: [
-      "No operating entity or jurisdiction has been established, which blocks any residency or contracting assessment.",
-      "Certifications are not established in this dataset.",
+      "No operating entity or jurisdiction has been established, which blocks any contracting assessment; incorporation is not inferred from operating locations.",
+      "EU data residency is not established in this dataset.",
     ],
     bestFor: ["Teams running open-weight models without operating their own GPU fleet."],
     sources: [
-baselineSource(),
+      researchSource(),
+      baselineSource(),
       modelsEndpointSource("https://api.novita.ai/openai/v1/models"),
       siteSource("https://novita.ai"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/novita-labs/"),
       xSource("novita_labs"),
     ],
     lastVerified: DATASET_DATE,
@@ -1244,79 +1525,108 @@ baselineSource(),
     slug: "truefoundry",
     name: "TrueFoundry",
     website: "https://www.truefoundry.com",
+    logo: "/logos/truefoundry.png",
     summary:
-      "An enterprise AI platform with an LLM gateway component, deployable into a customer's own cloud account or data centre.",
-    differentiator: "Enterprise gateway built for VPC and on-premise deployment.",
+      "An enterprise AI gateway and control plane deployable into a customer's own cloud account or data centre, with access to 1,000+ LLMs.",
+    differentiator:
+      "Enterprise AI gateway/control plane with 1,000+ LLMs and customer-VPC/on-prem deployment.",
     type: "enterprise",
     tier: "primary",
-    categories: ["enterprise"],
-    jurisdictionBucket: "unresolved",
+    categories: ["provider-networks", "eu-hosted", "multimodal", "enterprise", "agent-gateways"],
+    jurisdictionBucket: "us",
     legalEntity: unverified(
-      "Evidence about the operating entity conflicts and is not resolved. Flagged in the September 8, 2026 legal baseline.",
+      "Evidence about the operating entity conflicts and is not resolved. The research pass records the company as United States based but states that the legal entity should remain unresolved until a primary corporate source is confirmed.",
     ),
-    country: unverified(
-      "Country of incorporation is unresolved because the evidence conflicts. The company's San Francisco presence is recorded separately as a city.",
-    ),
-    city: field("San Francisco", "verified", { sources: ["linkedin"], asOf: DATASET_DATE }),
-    euJurisdiction: unverified(
-      "Cannot be determined while the country of incorporation is unresolved.",
-    ),
-    productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "51-200", min: 51, max: 200 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
+    country: field("United States", "needs-verification", {
+      note: "Operating country recorded by the September 17, 2026 research pass, with its San Francisco presence recorded separately as a city. Registry confirmation of the incorporating entity is outstanding.",
     }),
+    countryCode: field("US", "needs-verification"),
+    city: field("San Francisco", "verified", { sources: ["linkedin"], asOf: DATASET_DATE }),
+    euJurisdiction: field(false, "needs-verification", {
+      note: "Recorded as non-EU on the basis of its United States operations; the incorporating entity is unresolved.",
+    }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
+    productStatus: field("active", "verified", { sources: ["site"] }),
+    employees: employees("51-200"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/truefoundry/",
       xUrl: "https://x.com/truefoundry",
-      linkedinFollowers: field(38251, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(1200, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: floorFollowers(38700, "LinkedIn"),
+      xFollowers: approxFollowers(1200, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      official("1,000+", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Vendor floor for LLMs reachable through the gateway. The product is deployed into customer infrastructure and exposes no public catalogue endpoint.",
+      official("1,600+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Vendor headline on September 17, 2026. The official documentation states 1,000+ LLMs across 15+ platforms plus self-hosted models. The product is deployed into customer infrastructure and exposes no public catalogue endpoint.",
       }),
+      [
+        official("1,000+", MEASUREMENT_DATE, {
+          sourceIds: ["docs"],
+          note: "Documentation floor for LLMs reachable through the gateway.",
+        }),
+      ],
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      official("15+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "The documentation states 1,000+ LLMs across 15+ platforms; self-hosted models can be added on top.",
+      }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
+    routes: metric(notPublished("Multiple routes per model; no route or endpoint count is published.")),
+    modalities: field(["llm", "agents", "embeddings", "image", "audio", "reranking"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible gateway API.",
+      sources: ["docs", "research"],
+    }),
     deployment: field(["hosted", "vpc", "on-prem"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["site"],
+      sources: ["site", "docs"],
     }),
     vpc: field("yes", "vendor-stated", { sources: ["site"] }),
     onPrem: field("yes", "vendor-stated", { sources: ["site"] }),
+    gatewayLocations: field(["San Francisco", "Customer VPC / on-premise"], "vendor-stated", {
+      sources: ["research"],
+    }),
     certifications: field(["SOC 2"], "vendor-stated", {
       note: "The vendor also positions around HIPAA and ITAR. Those are regulatory regimes rather than certifications, so they are not listed here as certifications.",
       sources: ["site"],
     }),
+    zeroDataRetention: field("enterprise", "vendor-stated", {
+      note: "Offered under enterprise agreements rather than as a standard-plan default.",
+      sources: ["research"],
+    }),
+    euResidency: field("eu-available", "vendor-stated", {
+      note: "The vendor describes geo-aware deployment; EU processing follows the region of the customer's VPC or on-premise deployment rather than a vendor-operated EU endpoint.",
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
+    }),
     pricingTransparency: field("contact-sales", "vendor-stated", {
       note: "Enterprise, sales-led positioning.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "Deploys inside the customer's own cloud account or data centre, which changes where requests are processed regardless of vendor region lists.",
-      "Largest social reach of any entry in this dataset, and a 51–200 person company.",
-      "SOC 2 stated, with HIPAA and ITAR positioning for regulated workloads.",
+      "1,000+ LLMs across 15+ platforms documented, plus self-hosted models, across six documented modalities.",
+      "SOC 2 stated, with HIPAA and ITAR positioning for regulated workloads, from a 51–200 person company.",
     ],
     limitations: [
-      "The operating entity and country of incorporation are unresolved because the evidence conflicts — unusual for a company of this size.",
-      "1,000+ LLMs is a vendor floor, not a measured catalogue.",
-      "Enterprise, sales-led pricing.",
+      "The incorporating entity is unresolved because the evidence conflicts — unusual for a company of this size — so it is recorded as United States based on operations only.",
+      "1,600+ LLMs is a vendor headline, not a measured catalogue, and no route count is published.",
+      "Enterprise, sales-led pricing, and zero data retention only under enterprise terms.",
     ],
     bestFor: ["Organisations that require the gateway to run inside their own infrastructure."],
     sources: [
-      baselineSource(), siteSource("https://www.truefoundry.com"), linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.truefoundry.com"),
+      docsSource("https://www.truefoundry.com/docs/ai-gateway/supported-providers"),
+      linkedinSource("https://www.linkedin.com/company/truefoundry/"),
       xSource("truefoundry"),
     ],
     lastVerified: DATASET_DATE,
@@ -1327,85 +1637,116 @@ baselineSource(),
     slug: "portkey",
     name: "Portkey",
     website: "https://portkey.ai",
+    logo: "/logos/portkey.png",
     summary:
-      "An AI gateway with routing, caching, guardrails and observability, available as a hosted service and as an Apache-2.0 gateway that customers can run themselves.",
-    differentiator: "Apache-2.0 gateway core; acquired by Palo Alto Networks in May 2026.",
+      "An AI gateway with routing, caching, guardrails, governance and observability, available as a hosted service and as an Apache-2.0 gateway that customers can run themselves.",
+    differentiator:
+      "Enterprise AI gateway with routing, guardrails, governance and an open-source gateway core.",
     type: "enterprise",
     tier: "primary",
-    categories: ["enterprise", "open-source"],
+    categories: ["provider-networks", "multimodal", "enterprise", "open-source"],
     jurisdictionBucket: "us",
-    country: field("United States", "verified", { sources: ["site"], asOf: DATASET_DATE }),
+    country: field("United States", "verified", { sources: ["site", "research"], asOf: DATASET_DATE }),
     countryCode: field("US", "verified", { sources: ["site"] }),
+    city: field("San Francisco", "verified", {
+      note: "Headquarters, with a Bengaluru office.",
+      sources: ["linkedin", "research"],
+    }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
     ownershipStatus: field("acquired", "verified", {
-      note: "Acquisition completed on May 29, 2026, announced April 30, 2026.",
-      sources: ["site"],
+      note: "Acquisition by Palo Alto Networks completed on May 29, 2026, announced April 30, 2026. LinkedIn confirms Palo Alto Networks ownership.",
+      sources: ["site", "linkedin", "research"],
       asOf: DATASET_DATE,
     }),
     ownership: field("Acquired by Palo Alto Networks; completed May 29, 2026", "verified", {
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    parentCompany: field("Palo Alto Networks", "verified", { sources: ["site"] }),
+    parentCompany: field("Palo Alto Networks", "verified", { sources: ["site", "linkedin"] }),
     productStatus: field("active", "verified", { sources: ["repo"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/portkey-ai/",
       xUrl: "https://x.com/PortkeyAI",
-      linkedinFollowers: field(12157, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(2000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(12176, "LinkedIn"),
+      xFollowers: exactFollowers(2045, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
       notComparable(
-        "The vendor's published 1,600+ figure counts addressable endpoints rather than deduplicated models, so it is recorded as an endpoint count and not as a model catalogue. No deduplicated model count is published.",
+        "The vendor publishes a 1,600+ figure that counts addressable endpoints, and its documentation lists roughly 3,700 model entries across providers. Both are vendor-style totals that are not comparable with a deduplicated model count, and no such count is published.",
       ),
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
-    ),
-    endpoints: metric(
-      official("1,600+", DATASET_DATE, {
-        sourceIds: ["site"],
-        note: "Addressable endpoints, published by the vendor. Not a model count.",
+      listed(72, "official", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Providers listed in the official documentation.",
       }),
     ),
-    modalities: field(["llm", "vision"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted", "self-hosted"], "vendor-stated", {
-      note: VENDOR_NOTE,
-      sources: ["repo"],
+    endpoints: metric(
+      listed(313, "official", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Endpoint combinations across providers, published in the documentation. The most exact endpoint figure the vendor publishes.",
+      }),
+      [
+        official("1,600+", MEASUREMENT_DATE, {
+          sourceIds: ["site"],
+          note: "Marketing figure for addressable endpoints recorded in the previous revision. Not a model count.",
+        }),
+      ],
+    ),
+    modalities: field(["llm", "image", "audio", "embeddings"], "vendor-stated", {
+      note: "The vendor lists text, image, audio and embeddings 'and more'; only the named modalities are recorded.",
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
     }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor documents an OpenAI-compatible unified API.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "self-hosted", "vpc", "on-prem"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["repo", "research"],
+    }),
+    vpc: field("yes", "vendor-stated", { sources: ["research"] }),
+    onPrem: field("yes", "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["United States"], "vendor-stated", { sources: ["research"] }),
     openSource: field("yes", "verified", {
       note: "The gateway component is published under Apache-2.0.",
       sources: ["repo"],
     }),
     license: field("Apache-2.0", "verified", { sources: ["repo"] }),
     repository: field("https://github.com/Portkey-AI/gateway", "verified", { sources: ["repo"] }),
+    certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
+      note: "Listed for enterprise compliance. The vendor also lists GDPR and HIPAA, which are regulatory regimes rather than certifications.",
+      sources: ["site", "research"],
+    }),
+    zeroDataRetention: field("enterprise", "vendor-stated", {
+      note: "An enterprise privacy mode rather than a universal zero-data-retention claim.",
+      sources: ["research"],
+    }),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     strengths: [
-      "The routing component is Apache-2.0, so it can be inspected and run inside the customer's own infrastructure.",
+      "The routing component is Apache-2.0, so it can be inspected and run hosted, self-hosted, in a VPC or on-premise.",
+      "72 documented providers and 313 published endpoint combinations, with SOC 2 Type II and ISO/IEC 27001 listed for enterprise compliance.",
       "Backing of a large security vendor following the Palo Alto Networks acquisition.",
     ],
     limitations: [
       "Acquired by Palo Alto Networks in May 2026, so roadmap, pricing and data handling now sit with a parent company.",
-      "The published 1,600+ figure counts endpoints rather than deduplicated models, so it is not comparable with a model count.",
-      "EU data residency and certifications are not established in this dataset.",
+      "The published 1,600+ figure counts endpoints rather than deduplicated models, so no comparable model count exists.",
+      "No EU residency claim is stated, and zero data retention is an enterprise privacy mode rather than a default.",
     ],
     bestFor: ["Teams that want a gateway they can read the source of and run themselves."],
     sources: [
-baselineSource(),
+      researchSource(),
+      baselineSource(),
       siteSource("https://portkey.ai"),
+      docsSource("https://portkey.ai/docs"),
       repoSource("https://github.com/Portkey-AI/gateway"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/portkey-ai/"),
       xSource("PortkeyAI"),
     ],
     lastVerified: DATASET_DATE,
@@ -1416,78 +1757,96 @@ baselineSource(),
     slug: "helicone",
     name: "Helicone",
     website: "https://www.helicone.ai",
+    logo: "/logos/helicone.png",
     summary:
-      "An open-source observability and gateway layer for LLM applications. Acquired by Mintlify in March 2026 and now in maintenance mode.",
-    differentiator: "Open source and self-hostable, but no longer actively developed.",
+      "An open-source observability platform for LLM applications with a gateway/proxy and managed routing. Joined Mintlify in March 2026 and is now in maintenance mode.",
+    differentiator:
+      "Open-source LLM observability platform with a gateway/proxy and managed routing.",
     type: "managed",
     tier: "primary",
-    categories: ["open-source"],
+    categories: ["provider-networks", "multimodal", "open-source"],
     jurisdictionBucket: "us",
     legalEntity: field("Helicone, Inc.", "verified", { sources: ["site"], asOf: DATASET_DATE }),
-    country: field("United States", "verified", { sources: ["site"] }),
+    country: field("United States", "verified", { sources: ["site", "research"] }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
     ownershipStatus: field("acquired", "verified", {
-      note: "Announced on March 3, 2026.",
-      sources: ["site"],
+      note: "Announced on March 3, 2026. LinkedIn states Helicone joined Mintlify.",
+      sources: ["site", "linkedin", "research"],
       asOf: DATASET_DATE,
     }),
     ownership: field("Acquired by Mintlify; announced March 3, 2026", "verified", {
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    parentCompany: field("Mintlify", "verified", { sources: ["site"] }),
+    parentCompany: field("Mintlify", "verified", { sources: ["site", "linkedin"] }),
     productStatus: field("maintenance", "verified", {
       note: "Maintenance mode following the acquisition: security patches, bug fixes and new model support continue, but active feature development has ended.",
-      sources: ["site"],
+      sources: ["site", "linkedin"],
       asOf: DATASET_DATE,
     }),
-    employees: field({ band: "2-10", min: 2, max: 10 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("2-10"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/helicone/",
       xUrl: "https://x.com/helicone_ai",
-      linkedinFollowers: field(2543, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(6000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(3000, "LinkedIn"),
+      xFollowers: exactFollowers(5730, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      variable(
-        "Helicone proxies traffic to providers the customer configures with their own keys, so the reachable catalogue is whatever those providers expose rather than a fixed list.",
-      ),
+      official("100+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "The cloud gateway announcement referenced 100+ models with automatic failover. The reachable set otherwise follows the provider keys the customer configures.",
+      }),
     ),
     providers: metric(
-      variable("Determined by the provider credentials the customer configures."),
+      official("20+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "20+ documented gateway providers.",
+      }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted", "self-hosted"], "vendor-stated", { sources: ["repo"] }),
+    routes: metric(notPublished("No route or endpoint count is publicly stated.")),
+    modalities: field(["llm", "image", "audio"], "vendor-stated", {
+      note: "Text, image and audio, plus provider-dependent modalities that are not enumerated.",
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The gateway is documented as an OpenAI-compatible proxy.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "self-hosted"], "vendor-stated", { sources: ["repo", "research"] }),
+    gatewayLocations: field(["United States"], "vendor-stated", { sources: ["research"] }),
     openSource: field("yes", "verified", { sources: ["repo"] }),
     repository: field("https://github.com/Helicone/helicone", "verified", { sources: ["repo"] }),
+    certifications: field(["SOC 2"], "vendor-stated", {
+      note: "The vendor also lists HIPAA, which is a regulatory regime rather than a certification.",
+      sources: ["site", "research"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     strengths: [
-      "Codebase is public, so logging and routing behaviour can be audited directly.",
-      "Can be self-hosted, which keeps request handling inside infrastructure the customer controls.",
+      "Codebase is public, so logging and routing behaviour can be audited directly, and it can be self-hosted.",
+      "20+ documented gateway providers with automatic failover, and SOC 2 stated.",
     ],
     limitations: [
-      "In maintenance mode after the March 2026 Mintlify acquisition — a material risk for a new long-term dependency.",
-      "Catalogue breadth is not the product's purpose, so no model count is recorded.",
+      "In maintenance mode after joining Mintlify in March 2026 — a material risk for a new long-term dependency.",
+      "The 100+ model figure comes from a product announcement rather than an enumerable catalogue, and no route count is published.",
+      "No EU residency claim or zero-data-retention position is stated.",
     ],
     bestFor: [
       "Teams already running it, or wanting a self-hosted observability layer they can fork.",
     ],
     sources: [
-baselineSource(),
+      researchSource(),
+      baselineSource(),
       siteSource("https://www.helicone.ai"),
+      docsSource("https://docs.helicone.ai"),
       repoSource("https://github.com/Helicone/helicone"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/helicone/"),
       xSource("helicone_ai"),
     ],
     lastVerified: DATASET_DATE,
@@ -1498,62 +1857,94 @@ baselineSource(),
     slug: "braintrust",
     name: "Braintrust",
     website: "https://www.braintrust.dev",
+    logo: "/logos/braintrust.png",
     summary:
-      "An evaluation and observability platform for AI products, including a proxy that routes requests to multiple model providers.",
-    differentiator: "Evaluation-first, with a model proxy attached.",
+      "An evaluation and observability platform for AI products, including a proxy/gateway layer that routes requests to multiple model providers.",
+    differentiator:
+      "AI evaluation and observability platform with a model proxy/gateway layer.",
     type: "enterprise",
     tier: "primary",
-    categories: ["enterprise"],
+    categories: ["provider-networks", "eu-hosted", "multimodal", "enterprise"],
     jurisdictionBucket: "us",
     legalEntity: field("Braintrust Data, Inc.", "verified", {
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    country: field("United States", "verified", { sources: ["site"] }),
+    country: field("United States", "verified", { sources: ["site", "research"] }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     city: field("San Francisco", "verified", { sources: ["linkedin"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "51-200", min: 51, max: 200 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("51-200"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/braintrustdata/",
       xUrl: "https://x.com/braintrust",
-      linkedinFollowers: field(15697, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(7600, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(15424, "LinkedIn"),
+      xFollowers: exactFollowers(7610, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
       variable(
-        "The AI proxy reaches whichever providers the customer configures with their own keys, so there is no fixed catalogue to count.",
+        "The AI proxy reaches whichever providers the customer configures with their own keys, so there is no fixed catalogue to count and the vendor publishes no comparable model figure.",
       ),
     ),
     providers: metric(
-      variable("Determined by the provider credentials the customer configures."),
+      listed(17, "documented", DATASET_DATE, {
+        display: "17+",
+        sourceIds: ["docs", "research"],
+        note: "At least 17 documented direct, cloud and custom provider integrations. The reachable set depends on the customer's configuration.",
+      }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    routes: metric(notPublished("Multiple API surfaces; no route or endpoint count is stated.")),
+    modalities: field(["llm", "image", "audio"], "vendor-stated", {
+      note: "Text, image and audio, plus provider-dependent modalities that are not enumerated.",
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The AI proxy is documented as an OpenAI-compatible endpoint.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "vpc", "self-hosted"], "vendor-stated", {
+      note: "Hosted, bring-your-own-cloud / VPC, and self-hosted data plane.",
+      sources: ["docs", "research"],
+    }),
+    vpc: field("yes", "vendor-stated", { sources: ["docs"] }),
+    gatewayLocations: field(
+      ["US and EU data-plane option", "Customer-controlled VPC / BYOC"],
+      "vendor-stated",
+      { sources: ["research"] },
+    ),
+    certifications: field(["SOC 2"], "vendor-stated", {
+      note: "SOC 2 alongside enterprise security controls.",
+      sources: ["site", "research"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    euResidency: field("eu-available", "vendor-stated", {
+      note: "A US or EU data-plane option is offered, and a customer-controlled VPC or BYOC deployment is also possible.",
+      sources: ["docs", "research"],
+      asOf: DATASET_DATE,
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "Routing is coupled to evaluation, so model changes can be measured against test sets rather than chosen by catalogue size.",
-      "51–200 person company with a confirmed operating entity.",
+      "An EU data-plane option and customer-controlled VPC/BYOC deployment, with SOC 2 stated, from a 51–200 person company with a confirmed operating entity.",
     ],
     limitations: [
-      "Model and provider counts are not published as an enumerable catalogue.",
-      "EU residency and certifications are not established in this dataset.",
+      "No fixed model catalogue: the reachable set follows the customer's provider keys, so it is an enterprise control-plane product rather than a model marketplace.",
+      "No zero-data-retention position is stated.",
     ],
     bestFor: ["Teams that select models by evaluation results rather than catalogue size."],
     sources: [
-      baselineSource(), siteSource("https://www.braintrust.dev"), linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.braintrust.dev"),
+      docsSource("https://www.braintrust.dev/docs"),
+      linkedinSource("https://www.linkedin.com/company/braintrustdata/"),
       xSource("braintrust"),
     ],
     lastVerified: DATASET_DATE,
@@ -1564,64 +1955,83 @@ baselineSource(),
     slug: "respan",
     name: "Respan",
     formerName: "Keywords AI",
-    website: "https://www.keywordsai.co",
+    website: "https://respan.ai",
+    logo: "/logos/respan.png",
     summary:
-      "An LLM monitoring and gateway platform, formerly named Keywords AI. Recorded once under its current name so the rename cannot split it into two entries.",
-    differentiator: "Formerly Keywords AI — one company, one entry.",
+      "An LLM gateway and observability platform, formerly branded Keywords AI. Recorded once under its current name so the rename cannot split it into two entries.",
+    differentiator: "AI gateway/observability product formerly branded Keywords AI.",
     type: "managed",
     tier: "primary",
-    categories: [],
+    categories: ["provider-networks"],
     jurisdictionBucket: "us",
     legalEntity: field("Keywords AI, Inc.", "verified", {
-      note: "The company now trades as Respan; the registered entity name is unchanged.",
-      sources: ["site"],
+      note: "The brand changed to Respan in February 2026; the registered entity name is unchanged.",
+      sources: ["site", "research"],
       asOf: DATASET_DATE,
     }),
-    country: field("United States", "verified", { sources: ["site"] }),
+    country: field("United States", "verified", { sources: ["site", "research"] }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
     ownership: field("Respan and Keywords AI are the same company", "verified", {
       note: "Integrity note carried from the September 8, 2026 legal baseline. The two names are one entry in this dataset, not two.",
       sources: ["baseline"],
       asOf: BASELINE_DATE,
     }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/respan-ai/",
       xUrl: "https://x.com/RespanAI",
-      linkedinFollowers: field(5859, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(2000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: floorFollowers(5859, "LinkedIn"),
+      xFollowers: approxFollowers(2000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notPublished("No comparable public model count was found in the vendor's material."),
+      official("1,000+", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Vendor headline. No enumerable public catalogue was measured.",
+      }),
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      official("34+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "34+ documented providers.",
+      }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
-    strengths: ["Monitoring and gateway functions in one product."],
+    routes: metric(notPublished("Multiple routes; no route or endpoint count is published.")),
+    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE, sources: ["site", "research"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The gateway is documented as OpenAI-compatible.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["United States"], "vendor-stated", { sources: ["research"] }),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Described by the vendor as customer controlled rather than a blanket default.",
+      sources: ["research"],
+    }),
+    certifications: noCertifications(),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
+    strengths: [
+      "Monitoring and gateway functions in one product, with 1,000+ models and 34+ documented providers stated.",
+      "Retention is customer controlled.",
+    ],
     limitations: [
-      "Model and provider counts, residency and certifications are open in this dataset.",
-      "The Keywords AI to Respan rename means older comparisons may double-count this company.",
+      "No certifications are publicly stated, and no EU residency claim is made.",
+      "The Keywords AI to Respan rename means older comparisons may double-count this company; the legal entity is still Keywords AI, Inc.",
     ],
     bestFor: [],
     sources: [
-      baselineSource(), siteSource("https://www.keywordsai.co"),
-      linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://respan.ai"),
+      docsSource("https://docs.respan.ai"),
+      linkedinSource("https://www.linkedin.com/company/respan-ai/"),
       xSource("RespanAI"),
     ],
     lastVerified: DATASET_DATE,
@@ -1631,62 +2041,84 @@ baselineSource(),
     id: "martian",
     slug: "martian",
     name: "Martian",
-    website: "https://www.withmartian.com",
+    website: "https://withmartian.com",
+    logo: "/logos/martian.png",
     summary:
-      "A model router that selects between upstream models per request rather than exposing a fixed choice.",
-    differentiator: "The routing decision itself is the product.",
+      "A model router that selects between upstream models per request, trading off cost and quality, rather than exposing a fixed choice.",
+    differentiator:
+      "Routing-first model router focused on automatic model selection and cost/quality trade-offs.",
     type: "managed",
     tier: "primary",
-    categories: [],
+    categories: ["provider-networks", "enterprise"],
     jurisdictionBucket: "us",
     legalEntity: field("Martian Learning, Inc.", "verified", {
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    country: field("United States", "verified", { sources: ["site"] }),
+    country: field("United States", "verified", { sources: ["site", "research"] }),
     countryCode: field("US", "verified", { sources: ["site"] }),
+    city: field("San Francisco", "verified", { sources: ["linkedin", "research"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/martian-ai/",
       xUrl: "https://x.com/withmartian",
-      linkedinFollowers: field(6409, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(4000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(6408, "LinkedIn"),
+      xFollowers: exactFollowers(3801, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notPublished(
-        "Martian routes between models per request and publishes no catalogue count. A single figure would not describe the product well in any case.",
-      ),
+      listed(292, "catalogue", DATASET_DATE, {
+        scope: "llm",
+        sourceIds: ["site", "research"],
+        note: "Official catalogue count on September 17, 2026. Independent catalogue research on the same date found 286 models and 48 providers; the vendor's own figures are recorded.",
+      }),
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      listed(47, "catalogue", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Providers in the official catalogue. Independent research on the same date counted 48.",
+      }),
     ),
-    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    routes: metric(
+      notPublished(
+        "Two primary inference API formats are documented — OpenAI Chat Completions and Anthropic Messages — plus a /v1/models endpoint. No comparable route or endpoint count is published.",
+      ),
+    ),
+    modalities: field(["llm"], "vendor-stated", { note: VENDOR_NOTE, sources: ["site", "research"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "OpenAI Chat Completions and Anthropic Messages formats are both documented.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted", "vpc"], "vendor-stated", { sources: ["research"] }),
+    vpc: field("yes", "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["United States"], "vendor-stated", {
+      note: "Company headquarters in San Francisco.",
+      sources: ["research"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "Intelligent per-request model routing rather than a fixed model choice.",
-      "Operating entity confirmed.",
+      "Per-request model routing with automatic model selection and cost/quality trade-offs rather than a fixed model choice.",
+      "292 models across 47 providers in the official catalogue, with hosted and VPC deployment documented.",
     ],
     limitations: [
-      "No model or provider counts are published, and none are assumed here.",
-      "Per-request routing makes a single catalogue count less meaningful.",
+      "No route or endpoint count is published, and per-request routing makes a single catalogue count less descriptive of the product.",
+      "No EU residency claim, zero-data-retention position or certifications are publicly stated.",
     ],
     bestFor: ["Teams optimising cost or quality per request rather than picking one model."],
     sources: [
-      baselineSource(), siteSource("https://www.withmartian.com"), linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://withmartian.com"),
+      linkedinSource("https://www.linkedin.com/company/martian-ai/"),
       xSource("withmartian"),
     ],
     lastVerified: DATASET_DATE,
@@ -1697,9 +2129,11 @@ baselineSource(),
     slug: "not-diamond",
     name: "Not Diamond",
     website: "https://www.notdiamond.ai",
+    logo: "/logos/not-diamond.png",
     summary:
       "A routing layer that selects a model per prompt based on learned routing decisions, with a focus on coding agents.",
-    differentiator: "Prompt-level model routing for coding agents.",
+    differentiator:
+      "Intelligent model router aimed at coding agents and prompt-level model selection.",
     type: "managed",
     tier: "primary",
     categories: ["agent-gateways"],
@@ -1708,55 +2142,66 @@ baselineSource(),
       sources: ["site"],
       asOf: DATASET_DATE,
     }),
-    country: field("United States", "verified", { sources: ["site"] }),
+    country: field("United States", "verified", { sources: ["site", "research"] }),
     countryCode: field("US", "verified", { sources: ["site"] }),
-    city: field("San Francisco", "verified", { sources: ["linkedin"] }),
+    city: field("San Francisco", "verified", { sources: ["linkedin", "research"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
     productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "11-50",
+      "LinkedIn company-size band, with 35 employees visible on the profile.",
+    ),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/notdiamond/",
       xUrl: "https://x.com/notdiamond_ai",
-      linkedinFollowers: unverified(
-        "No LinkedIn follower count was found for this company.",
-      ),
-      xFollowers: field(154, "verified", {
-        note: "Exact X follower count captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: floorFollowers(1000, "LinkedIn"),
+      xFollowers: exactFollowers(154, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
       notPublished(
-        "Not Diamond selects a model per prompt from a routed set and publishes no headline catalogue count.",
+        "Not Diamond selects a model per prompt from a routed set and publishes no headline catalogue count. Public model counts are not comparable with fixed model-marketplace catalogues.",
       ),
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      notPublished("Multiple upstream providers; no provider count is published."),
     ),
-    modalities: field(["llm", "agents"], "vendor-stated", { note: VENDOR_NOTE }),
-    deployment: field(["hosted"], "vendor-stated"),
+    routes: metric(notPublished("Multiple routed model sets; no route or endpoint count is published.")),
+    modalities: field(["llm", "agents"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["site", "research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The router is documented as OpenAI-compatible.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["San Francisco, California"], "vendor-stated", {
+      sources: ["research"],
+    }),
     certifications: field(["SOC 2", "ISO/IEC 27001"], "vendor-stated", { sources: ["site"] }),
     zeroDataRetention: field("yes", "vendor-stated", {
       note: "Zero-data-retention is part of the vendor's published positioning.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "SOC 2 and ISO/IEC 27001 stated, with zero-data-retention positioning, at an 11–50 person scale.",
-      "Routing tuned for coding agents rather than general chat.",
+      "Routing tuned for coding agents and prompt-level model selection rather than general chat.",
     ],
     limitations: [
-      "No enumerable catalogue, so no measured model count is recorded.",
-      "EU residency is not established in this dataset.",
+      "No enumerable catalogue, so no model, provider or route count is recorded.",
+      "No EU residency claim is stated.",
     ],
     bestFor: ["Teams routing coding-agent traffic across models."],
     sources: [
-      baselineSource(), siteSource("https://www.notdiamond.ai"), linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.notdiamond.ai"),
+      linkedinSource("https://www.linkedin.com/company/notdiamond/"),
       xSource("notdiamond_ai"),
     ],
     lastVerified: DATASET_DATE,
@@ -1765,82 +2210,106 @@ baselineSource(),
   createGateway({
     id: "maxim-ai",
     slug: "maxim-ai",
-    name: "Maxim AI",
-    website: "https://www.getmaxim.ai",
+    name: "Maxim AI (Bifrost)",
+    website: "https://getmaxim.ai/bifrost/",
+    logo: "/logos/maxim-ai.png",
     summary:
-      "An evaluation and observability platform for AI agents. Its gateway component, Bifrost, is published under Apache-2.0 and can be self-hosted, including air-gapped.",
-    differentiator: "Apache-2.0 gateway (Bifrost) with air-gapped deployment.",
+      "An evaluation and observability platform for AI agents whose gateway component, Bifrost, is published under Apache-2.0 and can be self-hosted, deployed into a VPC or run air-gapped.",
+    differentiator:
+      "Open-source high-performance AI gateway/runtime with self-hosted, VPC and air-gapped options.",
     type: "enterprise",
     tier: "primary",
-    categories: ["agent-gateways", "enterprise", "open-source"],
-    jurisdictionBucket: "unresolved",
+    categories: ["provider-networks", "eu-hosted", "enterprise", "agent-gateways", "open-source"],
+    jurisdictionBucket: "us",
     legalEntity: field("H3 Labs Inc.", "verified", { sources: ["site"], asOf: DATASET_DATE }),
-    country: unverified(
-      "The operating entity is H3 Labs Inc., but its country of registration has not been read from a registry filing. None is assumed.",
-    ),
-    euJurisdiction: unverified(
-      "Cannot be determined while the country of registration is unresolved.",
-    ),
-    productStatus: field("active", "verified", { sources: ["repo"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
+    country: field("United States", "needs-verification", {
+      note: "Recorded by the September 17, 2026 research pass. The country of registration of H3 Labs Inc. has not been read from a registry filing.",
     }),
+    countryCode: field("US", "needs-verification"),
+    euJurisdiction: field(false, "needs-verification", {
+      note: "Recorded as non-EU on the basis of the research pass; registry confirmation is outstanding.",
+    }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
+    productStatus: field("active", "verified", { sources: ["repo"] }),
+    employees: employees("51-200"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/maxim-ai/",
       xUrl: "https://x.com/getmaximai",
-      linkedinFollowers: field(6910, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(395, "verified", {
-        note: "Exact X follower count captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(6900, "LinkedIn"),
+      xFollowers: exactFollowers(395, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      variable(
-        "Bifrost is deployed by the customer and routes to the providers they configure, so the reachable catalogue depends on that configuration.",
-      ),
+      listed(4457, "documented", DATASET_DATE, {
+        sourceIds: ["repo", "research"],
+        note: "Model entries in the Bifrost catalogue across 99 providers. Bifrost is deployed by the customer and routes to the providers they configure, so the reachable catalogue depends on that configuration rather than being a fixed public catalogue.",
+      }),
     ),
     providers: metric(
-      variable("Determined by the provider credentials configured in the customer's deployment."),
+      listed(99, "documented", DATASET_DATE, {
+        sourceIds: ["repo", "research"],
+        note: "Providers listed in the Bifrost catalogue; the reachable set is configured per deployment.",
+      }),
     ),
-    modalities: field(["llm", "agents"], "vendor-stated", { note: VENDOR_NOTE }),
+    routes: metric(
+      variable("13 routing modes are documented; routes themselves are customer-configured."),
+    ),
+    modalities: field(["llm", "agents"], "vendor-stated", {
+      note: VENDOR_NOTE,
+      sources: ["site", "research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Bifrost is documented as an OpenAI-compatible gateway.",
+      sources: ["repo", "research"],
+    }),
     deployment: field(["hosted", "self-hosted", "vpc", "on-prem"], "vendor-stated", {
-      note: "Bifrost can be self-hosted, deployed into a customer VPC, or run air-gapped.",
-      sources: ["repo"],
+      note: "Bifrost can be self-hosted, deployed into a customer VPC, or run air-gapped on-premise.",
+      sources: ["repo", "research"],
     }),
     vpc: field("yes", "vendor-stated", { sources: ["site"] }),
     onPrem: field("yes", "vendor-stated", {
       note: "Air-gapped deployment is offered.",
       sources: ["site"],
     }),
+    gatewayLocations: field(["Customer deployment"], "vendor-stated", { sources: ["research"] }),
     openSource: field("yes", "verified", {
       note: "The Bifrost gateway is published under Apache-2.0.",
       sources: ["repo"],
     }),
     license: field("Apache-2.0", "verified", { sources: ["repo"] }),
+    repository: field("https://github.com/maximhq/bifrost", "verified", { sources: ["repo"] }),
     certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
       note: "The vendor also positions around HIPAA and GDPR, which are regulatory regimes rather than certifications.",
-      sources: ["site"],
+      sources: ["site", "research"],
+    }),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Customer controlled: in self-hosted, VPC and air-gapped deployments no vendor endpoint receives the traffic.",
+      sources: ["research"],
+    }),
+    euResidency: field("self-hosted", "vendor-stated", {
+      note: "Residency follows the customer's self-hosted, VPC or air-gapped deployment; a hosted option also exists.",
+      sources: ["repo", "research"],
+      asOf: DATASET_DATE,
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
     }),
     strengths: [
-      "Gateway component is Apache-2.0 and can run air-gapped, which removes the vendor from the request path.",
-      "SOC 2 Type II and ISO/IEC 27001 stated, alongside agent evaluation tooling.",
+      "Gateway component is Apache-2.0 and can run self-hosted, in a VPC or air-gapped, which removes the vendor from the request path.",
+      "SOC 2 Type II and ISO/IEC 27001 stated, alongside agent evaluation tooling, from a 51–200 person company.",
+      "A large configurable catalogue: 4,457 model entries across 99 providers and 13 routing modes documented.",
     ],
     limitations: [
-      "The country of registration for H3 Labs Inc. is unresolved, so jurisdiction cannot be assessed.",
-      "No model or provider counts are published.",
+      "The country of registration for H3 Labs Inc. has not been read from a registry filing.",
+      "Model, provider and route counts are configurable rather than a fixed public catalogue, so they are listed but not ranked.",
     ],
     bestFor: ["Teams building agents that need evaluation plus a self-hostable gateway."],
     sources: [
-baselineSource(),
-      siteSource("https://www.getmaxim.ai"),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://getmaxim.ai/bifrost/"),
       repoSource("https://github.com/maximhq/bifrost"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/maxim-ai/"),
       xSource("getmaximai"),
     ],
     lastVerified: DATASET_DATE,
@@ -1850,66 +2319,86 @@ baselineSource(),
     id: "atlas-cloud",
     slug: "atlas-cloud",
     name: "Atlas Cloud",
-    website: null,
+    website: "https://www.atlascloud.ai",
+    logo: "/logos/atlas-cloud.svg",
     summary:
-      "An inference platform serving text, image, video and audio models. Its own policy states that it does not represent that it holds SOC 2, ISO 27001 or HIPAA certification.",
-    differentiator: "Multimodal inference; explicitly claims no security certifications.",
+      "A multimodal inference platform serving language, image, video and audio models. Its own policy states that it does not represent that it holds SOC 2, ISO 27001 or HIPAA certification.",
+    differentiator:
+      "Multimodal inference platform for language, image, video and audio models.",
     type: "managed",
     tier: "additional",
-    categories: ["multimodal"],
+    categories: ["provider-networks", "multimodal"],
     jurisdictionBucket: "us",
-    country: field("United States", "verified", { sources: ["linkedin"], asOf: DATASET_DATE }),
+    country: field("United States", "verified", {
+      note: "LinkedIn confirms the AI Atlas Cloud entity is the Menlo Park company; it is not to be confused with unrelated Atlas Cloud companies.",
+      sources: ["linkedin", "research"],
+      asOf: DATASET_DATE,
+    }),
     countryCode: field("US", "verified", { sources: ["linkedin"] }),
     city: field("Menlo Park, California", "verified", { sources: ["linkedin"] }),
     euJurisdiction: field(false, "verified", { sources: ["linkedin"] }),
-    productStatus: field("active", "verified"),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
+    productStatus: field("active", "verified", { sources: ["site"] }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/atlas-cloudai/",
       xUrl: "https://x.com/atlas_cloud_ai",
-      linkedinFollowers: field(4848, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(3000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(5636, "LinkedIn"),
+      xFollowers: approxFollowers(3000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notPublished("No comparable public model count was found in the vendor's material."),
+      official("400+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["site", "research"],
+        note: "Vendor headline across language, image, video and audio models. No enumerable catalogue was measured.",
+      }),
     ),
     providers: metric(
-      notComparable(
-        "Atlas Cloud serves models on its own infrastructure rather than brokering third-party provider APIs, so an upstream provider count does not describe this product.",
+      catalogueCount(16, DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Model providers listed on the site. Atlas serves models on its own infrastructure, so this counts the model providers whose models it offers rather than brokered upstream APIs.",
+      }),
+    ),
+    routes: metric(
+      notPublished(
+        "The documentation lists five core API endpoints; no model x provider route count is published.",
       ),
     ),
     modalities: field(["llm", "image", "video", "audio"], "vendor-stated", {
       note: VENDOR_NOTE,
+      sources: ["site", "research"],
     }),
-    deployment: field(["hosted"], "vendor-stated"),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The API is documented as OpenAI-compatible.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
+    gatewayLocations: field(["Menlo Park, California"], "vendor-stated", { sources: ["research"] }),
+    zeroDataRetention: notStated("zero-data-retention"),
     certifications: field([], "verified", {
       note: "None claimed. The vendor's own policy states that it does not represent that it holds SOC 2, ISO 27001 or HIPAA certification. This is recorded as an explicit absence, not as missing data.",
-      sources: ["legal"],
+      sources: ["legal", "research"],
       asOf: DATASET_DATE,
     }),
+    euResidency: residencyNotStated(),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
-      "Covers text, image, video and audio in one platform.",
+      "Covers language, image, video and audio in one platform, with 400+ models stated across 16 listed providers.",
       "Explicit about not holding security certifications, which is more useful to a buyer than silence.",
     ],
     limitations: [
       "States that it does not represent holding SOC 2, ISO 27001 or HIPAA certification — a blocker for many regulated buyers.",
-      "The official product URL has not been confirmed for this dataset, so no link is published.",
-      "No model or provider counts are published.",
+      "No EU residency claim or zero-data-retention position is stated, and no route count is published.",
     ],
     bestFor: [],
     sources: [
-      baselineSource(), legalSource(), linkedinSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.atlascloud.ai"),
+      legalSource(),
+      linkedinSource("https://www.linkedin.com/company/atlas-cloudai/"),
       xSource("atlas_cloud_ai"),
     ],
     lastVerified: DATASET_DATE,
@@ -1919,62 +2408,80 @@ baselineSource(),
     id: "anannas",
     slug: "anannas",
     name: "Anannas",
-    website: null,
+    website: "https://anannas.ai",
+    logo: "/logos/anannas.png",
     summary:
       "A unified OpenAI-compatible API that routes on price, latency and throughput, with fallback, multimodal support and bring-your-own-key.",
-    differentiator: "Price, latency and throughput routing; jurisdiction unresolved.",
+    differentiator:
+      "OpenAI-compatible gateway with price/latency/throughput routing, fallback and BYOK.",
     type: "managed",
     tier: "additional",
     categories: [],
     jurisdictionBucket: "unresolved",
     country: unverified(
-      "Unresolved. The published Terms contain an unfinished “[your jurisdiction]” placeholder, so no governing jurisdiction can be read from them.",
+      "Intentionally unresolved. The research pass records United States operations, but the published Terms contain an unfinished “[your jurisdiction]” placeholder, so no governing jurisdiction can be read from them and none is inferred from operating locations.",
     ),
     legalEntity: unverified("Not established. The Terms do not name an operating entity."),
     euJurisdiction: unverified(
       "Cannot be determined: the Terms contain an unfinished jurisdiction placeholder.",
     ),
-    productStatus: field("active", "verified"),
-    employees: field({ band: "2-10", min: 2, max: 10 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
+    productStatus: field("active", "verified", { sources: ["site"] }),
+    employees: employees("2-10"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/anannas-ai/",
       xUrl: "https://x.com/anannas_ai",
-      linkedinFollowers: field(147, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(739, "verified", {
-        note: "Exact X follower count captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: exactFollowers(147, "LinkedIn"),
+      xFollowers: exactFollowers(739, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notPublished(
-        "No comparable public model count was found. The public API endpoint did not respond when checked on September 15, 2026.",
-      ),
+      official("50+", DATASET_DATE, {
+        scope: "llm",
+        sourceIds: ["site", "research"],
+        note: "Current vendor claim for LLMs. No enumerable catalogue was measured; the public API endpoint did not respond when checked on September 15, 2026.",
+      }),
     ),
     providers: metric(
-      notPublished("No upstream provider count is published in the vendor's public material."),
+      notPublished("Multiple upstream providers; no provider count is published."),
     ),
-    deployment: field(["hosted"], "vendor-stated"),
+    routes: metric(
+      notPublished("At least two API surfaces are documented; no route or endpoint count is published."),
+    ),
+    modalities: field(["llm"], "vendor-stated", {
+      note: "The vendor describes multimodal support without enumerating modalities, so only text generation is recorded.",
+      sources: ["site", "research"],
+    }),
+    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
     byok: field("yes", "vendor-stated", { sources: ["site"] }),
+    gatewayLocations: notPublishedField("Gateway location is not publicly stated."),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The vendor's own material describes a unified OpenAI-compatible API. Not independently exercised: the public endpoint did not respond when checked.",
+      sources: ["site"],
+    }),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: unverified(
+      "Not established. No residency claim has been read from the vendor's own documentation for this dataset.",
+    ),
+    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
     strengths: [
       "Routes on price, latency and throughput with fallback, rather than a fixed provider order.",
-      "OpenAI-compatible surface with bring-your-own-key support.",
+      "OpenAI-compatible surface with bring-your-own-key support and public pricing.",
     ],
     limitations: [
       "The published Terms contain an unfinished “[your jurisdiction]” placeholder, so the governing jurisdiction is genuinely unknown — a material contracting risk.",
-      "No operating entity is named anywhere in the available material.",
-      "A 2–10 person company, with no model or provider counts published.",
+      "No operating entity is named anywhere in the available material, and the gateway location is not stated.",
+      "A 2–10 person company with a 50+ model claim and no published provider or route counts.",
     ],
     bestFor: [],
     sources: [
-      baselineSource(), legalSource(), linkedinSource(), vendorMaterialSource(),
+      researchSource(),
+      baselineSource(),
+      siteSource("https://anannas.ai"),
+      legalSource(),
+      linkedinSource("https://www.linkedin.com/company/anannas-ai/"),
       xSource("anannas_ai"),
     ],
     lastVerified: DATASET_DATE,
@@ -1984,29 +2491,52 @@ baselineSource(),
     id: "routescope",
     slug: "routescope",
     name: "RouteScope",
-    website: null,
+    website: "https://www.routescope.ai",
+    logo: "/logos/routescope.svg",
     summary:
-      "Listed in the September 8, 2026 baseline as a routing candidate. No product or company detail has been established from primary sources.",
-    differentiator: "Candidate entry; nothing established.",
+      "An AI gateway and router project. Beyond its own website, no corporate or catalogue detail could be verified from primary sources.",
+    differentiator:
+      "AI gateway/router project with insufficient independently verifiable corporate and catalogue metadata.",
     type: "managed",
     tier: "additional",
     categories: [],
     jurisdictionBucket: "unresolved",
-    country: unverified("No jurisdiction established. None is assumed."),
+    country: unverified(
+      "No jurisdiction established. Primary-source identity and corporate verification remained insufficient; data from unrelated RouteScope companies is deliberately not attached.",
+    ),
     legalEntity: unverified("No operating entity established."),
-    models: metric(
-      notPublished("No public product material was found for this entry."),
-    ),
-    providers: metric(
-      notPublished("No public product material was found for this entry."),
-    ),
+    euJurisdiction: unverified("Cannot be determined while the operating entity is unresolved."),
+    ownershipStatus: unverified("Not established."),
+    productStatus: unverified("Not established from a primary source."),
+    employees: notPublishedField("Company size is not publicly stated."),
+    social: {
+      linkedinUrl: null,
+      xUrl: null,
+      linkedinFollowers: unverified("No verified LinkedIn company page was found."),
+      xFollowers: unverified("No verified X account was found."),
+      snapshotDate: DATASET_DATE,
+    },
+    models: metric(notPublished("No comparable model count is published.")),
+    providers: metric(notPublished("Multiple providers claimed; no provider count is published.")),
+    routes: metric(notPublished("Multiple routes claimed; no route or endpoint count is published.")),
+    modalities: notPublishedField("Supported modalities are not publicly stated."),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Described as OpenAI-compatible on the vendor's site. Not independently exercised.",
+      sources: ["site", "research"],
+    }),
+    deployment: notPublishedField("Deployment options are not publicly stated."),
+    gatewayLocations: notPublishedField("Gateway location is not publicly stated."),
+    zeroDataRetention: notStated("zero-data-retention"),
+    certifications: noCertifications(),
+    euResidency: residencyNotStated(),
+    pricingTransparency: unverified("Pricing disclosure was not verified."),
     strengths: [],
     limitations: [
-      "Nothing about this entry has been established from a primary source. It is listed so the dataset does not silently drop a candidate, not because it can be compared yet.",
+      "Nothing beyond the vendor's own site has been established from a primary source. It is listed so the dataset does not silently drop a candidate, not because it can be compared yet.",
     ],
     bestFor: [],
-    sources: [baselineSource()],
-    lastVerified: BASELINE_DATE,
+    sources: [researchSource(), baselineSource(), siteSource("https://www.routescope.ai")],
+    lastVerified: DATASET_DATE,
   }),
 
   // ---------------------------------------------------------------------
@@ -2017,57 +2547,56 @@ baselineSource(),
     slug: "litellm",
     name: "LiteLLM",
     website: "https://www.litellm.ai",
+    logo: "/logos/litellm.png",
     summary:
-      "An open-source proxy and SDK that exposes many provider APIs through one OpenAI-compatible interface, run by the customer.",
-    differentiator: "Widely deployed open-source proxy; MIT licensed.",
+      "An MIT-licensed open-source proxy and SDK that exposes many provider APIs through one OpenAI-compatible interface, run by the customer or as a hosted service.",
+    differentiator:
+      "MIT-licensed open-source AI gateway/proxy with broad provider support and customer-configured model catalogues.",
     type: "self-hosted",
     tier: "self-hosted",
-    categories: ["open-source", "multimodal"],
+    categories: ["provider-networks", "eu-hosted", "multimodal", "enterprise", "open-source"],
     jurisdictionBucket: "us",
     country: field("United States", "needs-verification", {
-      note: "Maintained by BerriAI. Registry confirmation is outstanding.",
+      note: "Maintained by BerriAI and recorded as United States based by the September 17, 2026 research pass. Registry confirmation is outstanding.",
     }),
     countryCode: field("US", "needs-verification"),
     euJurisdiction: field(false, "needs-verification"),
-    ownershipStatus: field("independent", "vendor-stated", { sources: ["repo"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["repo", "research"] }),
     productStatus: field("active", "verified", { sources: ["repo"] }),
-    employees: field({ band: "11-50", min: 11, max: 50 }, "verified", {
-      note: "LinkedIn company-size band.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees("11-50"),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/litellm/",
       xUrl: "https://x.com/LiteLLM",
-      linkedinFollowers: field(14187, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(5000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(14200, "LinkedIn"),
+      xFollowers: approxFollowers(5500, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      variable(
-        "LiteLLM is a proxy the customer runs and points at their own provider accounts, so the reachable catalogue is whatever those accounts expose. The project documents support for a large number of provider APIs, which is a different thing from a catalogue count.",
-      ),
+      listed(1892, "documented", DATASET_DATE, {
+        sourceIds: ["site", "research"],
+        note: "Unique models stated on the gateway site; its model catalogue shows 3,175 entries. LiteLLM is a proxy the customer runs against their own provider accounts, so the reachable catalogue depends on the enabled integrations and is not treated like a hosted fixed catalogue.",
+      }),
     ),
     providers: metric(
-      variable("Determined by the provider credentials configured in the customer's deployment."),
+      listed(140, "documented", DATASET_DATE, {
+        display: "140+",
+        sourceIds: ["docs", "research"],
+        note: "Documented provider integrations, stated by the project as 140+. The reachable set depends on what the operator enables, so the figure is not ranked against hosted catalogues.",
+      }),
     ),
+    routes: metric(variable("Routes are whatever the operator configures; no count is published.")),
     modalities: field(["llm", "image", "stt", "tts", "embeddings", "reranking"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["docs"],
+      sources: ["docs", "research"],
     }),
-    deployment: field(["self-hosted", "hosted"], "verified", { sources: ["repo"] }),
+    deployment: field(["self-hosted", "hosted"], "verified", { sources: ["repo", "research"] }),
+    gatewayLocations: field(["Customer deployment"], "vendor-stated", { sources: ["research"] }),
     euResidency: field("self-hosted", "verified", {
       note: "The customer runs the proxy, so request handling happens wherever they deploy it.",
       sources: ["repo"],
     }),
     zeroDataRetention: notApplicable(
-      "No vendor-operated endpoint receives the traffic in a self-hosted deployment.",
+      "Customer controlled: no vendor-operated endpoint receives the traffic in a self-hosted deployment.",
     ),
     openSource: field("yes", "verified", { sources: ["repo"] }),
     license: field("MIT", "verified", { sources: ["repo"] }),
@@ -2078,21 +2607,34 @@ baselineSource(),
       note: "Provider keys are supplied by the operator by design.",
       sources: ["repo"],
     }),
+    certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
+      note: "Stated for the enterprise tier rather than the open-source proxy itself.",
+      sources: ["site", "research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The project documents the proxy as an OpenAI-compatible interface over many provider APIs. Per-endpoint coverage has not been checked for this dataset.",
+      sources: ["docs"],
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      note: "The proxy is free to run; hosted and enterprise tiers are priced publicly with enterprise terms quoted separately.",
+      sources: ["site", "research"],
+    }),
     strengths: [
-      "Source is public and permissively licensed, so behaviour can be audited and modified.",
+      "Source is public and MIT licensed, so behaviour can be audited and modified, and 140+ provider integrations are documented.",
       "Residency follows the deployment, not a vendor's region list.",
-      "Covers image, speech, embedding and reranking endpoints as well as text.",
+      "Covers image, speech, embedding and reranking endpoints as well as text, with SOC 2 Type II and ISO/IEC 27001 stated for the enterprise tier.",
     ],
     limitations: [
-      "The customer operates, updates and secures the gateway themselves.",
-      "Self-hosting the proxy does not change where the upstream models actually run.",
+      "The customer operates, updates and secures the gateway themselves, and self-hosting the proxy does not change where the upstream models actually run.",
+      "Model and provider figures describe supported integrations rather than a fixed catalogue, so they are listed but not ranked.",
     ],
     bestFor: ["Teams that need the gateway inside their own perimeter."],
     sources: [
-siteSource("https://www.litellm.ai"),
+      researchSource(),
+      siteSource("https://www.litellm.ai"),
       repoSource("https://github.com/BerriAI/litellm"),
       docsSource("https://docs.litellm.ai"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/litellm/"),
       xSource("LiteLLM"),
     ],
     lastVerified: DATASET_DATE,
@@ -2103,36 +2645,31 @@ siteSource("https://www.litellm.ai"),
     slug: "kong-ai-gateway",
     name: "Kong AI Gateway",
     website: "https://konghq.com/products/kong-ai-gateway",
+    logo: "/logos/kong-ai-gateway.png",
     summary:
-      "AI routing, credential management and governance plugins built on the Kong Gateway data plane.",
-    differentiator: "AI routing delivered as plugins on an established API gateway.",
+      "AI routing, credential management, policy and governance plugins built on the Kong Gateway data plane, with multi-cloud connectivity.",
+    differentiator:
+      "Enterprise API and AI gateway with policy, routing, governance and multi-cloud connectivity.",
     type: "self-hosted",
     tier: "self-hosted",
-    categories: ["open-source", "enterprise"],
+    categories: ["provider-networks", "eu-hosted", "multimodal", "enterprise", "open-source"],
     jurisdictionBucket: "us",
     country: field("United States", "needs-verification", {
-      note: "Kong Inc. Registry confirmation is outstanding.",
+      note: "Kong Inc., recorded as United States based by the September 17, 2026 research pass. Registry confirmation is outstanding.",
     }),
     countryCode: field("US", "needs-verification"),
     euJurisdiction: field(false, "needs-verification"),
-    ownershipStatus: field("independent", "vendor-stated", { sources: ["site"] }),
+    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
     productStatus: field("active", "verified", { sources: ["repo"] }),
-    employees: field({ band: "1,001-5,000", min: 1001, max: 5000 }, "verified", {
-      note: "LinkedIn company-size band. Figures describe Kong Inc., the company behind the gateway, not the AI Gateway product alone.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "1,001-5,000",
+      "LinkedIn company-size band. Figures describe Kong Inc., the company behind the gateway, not the AI Gateway product alone.",
+    ),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/konghq/",
       xUrl: "https://x.com/thekonginc",
-      linkedinFollowers: field(83801, "verified", {
-        note: "Exact LinkedIn follower count captured on the snapshot date. Figures describe Kong Inc., the company behind the gateway, not the AI Gateway product alone.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(26500, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date. Figures describe Kong Inc., the company behind the gateway, not the AI Gateway product alone.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(84000, "LinkedIn"),
+      xFollowers: approxFollowers(26500, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
@@ -2141,17 +2678,35 @@ siteSource("https://www.litellm.ai"),
       ),
     ),
     providers: metric(
-      variable("Determined by the AI provider plugins configured on the data plane."),
+      listed(19, "documented", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Documented upstream provider types (the documentation also says 17+). The reachable set is configured on the data plane, so the figure is not ranked against hosted catalogues.",
+      }),
     ),
-    modalities: field(["llm", "embeddings"], "vendor-stated", {
+    routes: metric(
+      variable(
+        "12 AI capabilities are documented; model and route targets are customer-configured.",
+      ),
+    ),
+    modalities: field(["llm", "embeddings", "audio", "image", "video", "reranking"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["docs"],
+      sources: ["docs", "research"],
     }),
-    deployment: field(["self-hosted", "hosted", "on-prem"], "vendor-stated", { sources: ["docs"] }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "Kong's documentation states that AI Models expose OpenAI-compatible formats by default.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "self-hosted", "on-prem"], "vendor-stated", {
+      sources: ["docs", "research"],
+    }),
+    gatewayLocations: field(["Global / customer deployment"], "vendor-stated", {
+      sources: ["research"],
+    }),
     euResidency: field("self-hosted", "verified", {
       note: "In a self-managed deployment the data plane runs wherever the customer places it.",
       sources: ["docs"],
     }),
+    zeroDataRetention: notStated("gateway-level zero-data-retention"),
     openSource: field("yes", "verified", {
       note: "Kong Gateway is Apache-2.0. Some AI capabilities are enterprise-only.",
       sources: ["repo"],
@@ -2159,20 +2714,27 @@ siteSource("https://www.litellm.ai"),
     license: field("Apache-2.0", "verified", { sources: ["repo"] }),
     repository: field("https://github.com/Kong/kong", "verified", { sources: ["repo"] }),
     onPrem: field("yes", "vendor-stated", { sources: ["docs"] }),
+    certifications: unverified(
+      "Not evaluated at the gateway level. Kong Inc.'s corporate certifications are not attributed to the AI Gateway product here.",
+    ),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     strengths: [
-      "Reuses an existing API gateway deployment rather than adding a separate hop.",
-      "Data plane placement is a deployment decision, not a vendor region setting.",
+      "Reuses an existing API gateway deployment rather than adding a separate hop, with 19 documented upstream provider types and 12 AI capabilities.",
+      "Data plane placement is a deployment decision, not a vendor region setting, and models expose OpenAI-compatible formats by default.",
     ],
     limitations: [
       "Some AI features are gated behind the enterprise edition.",
-      "No published model catalogue count, because the product routes rather than hosts models.",
+      "No published model catalogue count, because the product routes rather than hosts models, and certifications were not evaluated at the gateway level.",
     ],
     bestFor: ["Organisations already running Kong for API traffic."],
     sources: [
-siteSource("https://konghq.com/products/kong-ai-gateway"),
+      researchSource(),
+      siteSource("https://konghq.com/products/kong-ai-gateway"),
       repoSource("https://github.com/Kong/kong"),
-      docsSource("https://docs.konghq.com/gateway/latest/ai-gateway/"),
-      linkedinSource(),
+      docsSource("https://developer.konghq.com/ai-gateway/"),
+      linkedinSource("https://www.linkedin.com/company/konghq/"),
       xSource("thekonginc"),
     ],
     lastVerified: DATASET_DATE,
@@ -2183,31 +2745,30 @@ siteSource("https://konghq.com/products/kong-ai-gateway"),
     slug: "envoy-ai-gateway",
     name: "Envoy AI Gateway",
     website: "https://aigateway.envoyproxy.io",
+    logo: "/logos/envoy-ai-gateway.png",
     summary:
-      "An open-source AI gateway built on Envoy Gateway, providing unified upstream access, credential handling and traffic policy for Kubernetes.",
-    differentiator: "Community-governed project rather than a single vendor's product.",
+      "An open-source AI gateway built on Envoy Gateway and Envoy Proxy, providing unified upstream access, credential handling and traffic policy for self-hosted Kubernetes infrastructure.",
+    differentiator:
+      "Open-source AI gateway built around Envoy Proxy and designed for self-hosted infrastructure.",
     type: "self-hosted",
     tier: "self-hosted",
-    categories: ["open-source"],
+    categories: ["provider-networks", "eu-hosted", "enterprise", "open-source"],
     jurisdictionBucket: "unresolved",
     country: notApplicable(
-      "A community-governed open-source project rather than a single operating company.",
+      "A community-governed open-source project rather than a single operating company. Treated as a project, not a standalone company.",
     ),
     legalEntity: notApplicable("No single operating entity; governed as an Envoy project."),
     euJurisdiction: notApplicable("Not a company."),
-    ownershipStatus: field("community", "verified", { sources: ["repo"] }),
+    ownershipStatus: field("community", "verified", { sources: ["repo", "research"] }),
     productStatus: field("active", "verified", { sources: ["repo"] }),
+    employees: notApplicable("An open-source project, not a company; company size does not apply."),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/envoyproxy/",
       xUrl: "https://x.com/envoyproxy",
-      linkedinFollowers: field(1118, "estimated", {
-        note: "Exact LinkedIn follower count captured on the snapshot date.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(31000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: unverified(
+        "Only a project-level Envoy page exists; no company follower count is recorded.",
+      ),
+      xFollowers: approxFollowers(31000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
@@ -2216,27 +2777,39 @@ siteSource("https://konghq.com/products/kong-ai-gateway"),
       ),
     ),
     providers: metric(
-      variable("Determined by the upstream providers declared in the cluster configuration."),
+      listed(15, "documented", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Documented upstream providers; the reachable set is declared in the cluster configuration, so the figure is not ranked against hosted catalogues.",
+      }),
     ),
+    routes: metric(variable("Routes are declared in cluster configuration; no count is published.")),
     modalities: field(["llm", "embeddings"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["docs"],
+      sources: ["docs", "research"],
+    }),
+    openaiCompatible: field("yes", "vendor-stated", {
+      note: "The project documents a unified OpenAI-compatible API in front of upstream providers.",
+      sources: ["docs", "research"],
     }),
     deployment: field(["self-hosted", "on-prem"], "verified", { sources: ["repo"] }),
+    gatewayLocations: field(["Customer deployment"], "vendor-stated", { sources: ["research"] }),
     euResidency: field("self-hosted", "verified", {
       note: "Runs in the customer's own Kubernetes cluster.",
       sources: ["repo"],
     }),
-    zeroDataRetention: notApplicable("No vendor-operated endpoint receives the traffic."),
+    zeroDataRetention: notApplicable(
+      "Customer controlled: no vendor-operated endpoint receives the traffic.",
+    ),
     openSource: field("yes", "verified", { sources: ["repo"] }),
     license: field("Apache-2.0", "verified", { sources: ["repo"] }),
     repository: field("https://github.com/envoyproxy/ai-gateway", "verified", {
       sources: ["repo"],
     }),
     onPrem: field("yes", "verified", { sources: ["repo"] }),
-    pricingTransparency: notApplicable("No commercial licence; the project is free to run."),
+    certifications: notApplicable("Not applicable at project level."),
+    pricingTransparency: notApplicable("Open source; no commercial licence, the project is free to run."),
     strengths: [
-      "No vendor relationship is required to run it.",
+      "No vendor relationship is required to run it, and 15 upstream providers are documented.",
       "Built on infrastructure many platform teams already operate.",
     ],
     limitations: [
@@ -2245,9 +2818,12 @@ siteSource("https://konghq.com/products/kong-ai-gateway"),
     ],
     bestFor: ["Platform teams standardising AI traffic on existing Envoy infrastructure."],
     sources: [
+      researchSource(),
       siteSource("https://aigateway.envoyproxy.io"),
       repoSource("https://github.com/envoyproxy/ai-gateway"),
       docsSource("https://aigateway.envoyproxy.io/docs/"),
+      linkedinSource("https://www.linkedin.com/company/envoyproxy/"),
+      xSource("envoyproxy"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2260,61 +2836,68 @@ siteSource("https://konghq.com/products/kong-ai-gateway"),
     slug: "amazon-bedrock",
     name: "Amazon Bedrock",
     website: "https://aws.amazon.com/bedrock/",
+    logo: "/logos/amazon-bedrock.png",
     summary:
-      "AWS's managed multi-model service, offering models from several providers through AWS APIs, billing and regions.",
-    differentiator: "Model access inside an existing AWS account and region model.",
+      "AWS's managed foundation-model platform, offering models from several providers through AWS APIs, billing, regions and a model marketplace.",
+    differentiator:
+      "AWS-managed foundation-model platform with regional infrastructure, marketplace and native AWS governance.",
     type: "hyperscaler",
     tier: "hyperscaler",
-    categories: ["enterprise", "eu-hosted", "multimodal"],
+    categories: ["eu-hosted", "multimodal", "enterprise"],
     jurisdictionBucket: "us",
     country: field("United States", "verified", {
       note: "Operated by Amazon Web Services, Inc.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("subsidiary", "verified", { sources: ["site"] }),
+    ownershipStatus: field("subsidiary", "verified", { sources: ["site", "research"] }),
     parentCompany: field("Amazon.com, Inc.", "verified", { sources: ["site"] }),
     productStatus: field("active", "verified", { sources: ["docs"] }),
-    employees: field({ band: "10,001+", min: 10001, max: null }, "verified", {
-      note: "LinkedIn company-size band. Figures describe the Amazon Web Services company accounts, not the Bedrock product.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "10,001+",
+      "LinkedIn company-size band for Amazon Web Services; Amazon reports over 1,000,000 employees group-wide. Figures describe the company, not the Bedrock product.",
+    ),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/amazon-web-services/",
       xUrl: "https://x.com/awscloud",
-      linkedinFollowers: field(11060000, "estimated", {
-        note: "Approximate LinkedIn follower count, rounded by scale, captured on the snapshot date. Figures describe the Amazon Web Services company accounts, not the Bedrock product.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(2200000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date. Figures describe the Amazon Web Services company accounts, not the Bedrock product.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(11100000, "LinkedIn"),
+      xFollowers: approxFollowers(2200000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notComparable(
-        "The catalogue is published per region and per deployment type rather than as one platform-wide list, so a single model count is not comparable with a gateway catalogue count.",
-      ),
+      official("100+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["docs", "research"],
+        note: "AWS documentation states 100+ foundation models, plus a separate marketplace with 100+ additional models. The catalogue is published per region and deployment type, so the figure is not directly comparable with dedicated multi-provider routers.",
+      }),
     ),
     providers: metric(
+      official("20+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Model providers onboarded by AWS. Models are onboarded by the cloud provider rather than reached through independent upstream accounts, so the figure is not directly comparable with dedicated routers.",
+      }),
+    ),
+    routes: metric(
       notComparable(
-        "Models are onboarded by the cloud provider rather than reached through independent upstream provider accounts, so an upstream provider count does not describe this product.",
+        "Routes and endpoints are region- and model-dependent, so no single count is comparable with a gateway route count.",
       ),
     ),
     modalities: field(["llm", "vision", "image", "video", "embeddings"], "vendor-stated", {
       note: VENDOR_NOTE,
-      sources: ["docs"],
+      sources: ["docs", "research"],
     }),
-    deployment: field(["hosted", "vpc"], "vendor-stated", { sources: ["docs"] }),
+    openaiCompatible: field("partial", "vendor-stated", {
+      note: "Bedrock exposes its own APIs; OpenAI-compatible access is documented for a subset of endpoints only.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "vpc"], "vendor-stated", { sources: ["docs", "research"] }),
     euResidency: field("eu-available", "verified", {
       note: "The service is offered in documented EU regions that the customer selects. It is not EU-only by default.",
       sources: ["docs"],
     }),
-    gatewayLocations: field(["Documented AWS regions, including EU regions"], "vendor-stated", {
-      sources: ["docs"],
+    gatewayLocations: field(["AWS global regions, including EU regions"], "vendor-stated", {
+      sources: ["docs", "research"],
     }),
     inferenceLocations: field(
       ["Within the selected AWS region, subject to per-model availability"],
@@ -2323,25 +2906,32 @@ siteSource("https://konghq.com/products/kong-ai-gateway"),
     ),
     vpc: field("yes", "vendor-stated", { sources: ["docs"] }),
     dpa: field("yes", "vendor-stated", { sources: ["site"] }),
-    openSource: field("no", "verified"),
-    pricingTransparency: field("public", "verified", { sources: ["site"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Configurable and provider dependent rather than a single platform-wide guarantee.",
+      sources: ["research"],
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     certifications: field(["ISO/IEC 27001", "SOC 2"], "vendor-stated", {
-      note: "Published on the provider's compliance pages. Scope varies by service and region.",
+      note: "Published on AWS's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
     strengths: [
       "Region selection is explicit and documented, including EU regions.",
-      "Procurement, billing and access control follow an existing cloud agreement.",
+      "Procurement, billing and access control follow an existing cloud agreement, with 100+ foundation models plus a marketplace.",
     ],
     limitations: [
-      "Catalogue is limited to models the cloud provider has onboarded.",
-      "Model availability differs by region, so an EU region does not imply the full catalogue.",
+      "Catalogue is limited to models the cloud provider has onboarded, and availability differs by region.",
+      "Only partial OpenAI API compatibility; region, endpoint and provider counts are not directly comparable with dedicated routers.",
     ],
     bestFor: ["Organisations already standardised on AWS with regional requirements."],
     sources: [
-siteSource("https://aws.amazon.com/bedrock/"),
-      docsSource("https://docs.aws.amazon.com/bedrock/"),
-      linkedinSource(),
+      researchSource(),
+      siteSource("https://aws.amazon.com/bedrock/"),
+      docsSource("https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html"),
+      linkedinSource("https://www.linkedin.com/company/amazon-web-services/"),
       xSource("awscloud"),
     ],
     lastVerified: DATASET_DATE,
@@ -2352,65 +2942,73 @@ siteSource("https://aws.amazon.com/bedrock/"),
     slug: "google-vertex-ai",
     name: "Google Vertex AI",
     website: "https://cloud.google.com/vertex-ai",
+    logo: "/logos/google-vertex-ai.png",
     summary:
-      "Google Cloud's managed AI platform, providing first-party and partner models through Google Cloud APIs and regions.",
-    differentiator: "Model access inside an existing Google Cloud project.",
+      "Google Cloud's managed AI platform, providing first-party and partner models through Google Cloud APIs, regions and controls.",
+    differentiator:
+      "Google Cloud enterprise AI platform with managed model access, regional deployment and Google-native controls.",
     type: "hyperscaler",
     tier: "hyperscaler",
-    categories: ["enterprise", "eu-hosted", "multimodal"],
+    categories: ["eu-hosted", "multimodal", "enterprise"],
     jurisdictionBucket: "us",
     country: field("United States", "verified", {
       note: "Operated by Google LLC.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("subsidiary", "verified", { sources: ["site"] }),
+    ownershipStatus: field("subsidiary", "verified", { sources: ["site", "research"] }),
     parentCompany: field("Alphabet Inc.", "verified", { sources: ["site"] }),
     productStatus: field("active", "verified", { sources: ["docs"] }),
-    employees: field({ band: "10,001+", min: 10001, max: null }, "verified", {
-      note: "LinkedIn company-size band. Figures describe the Google Cloud company accounts, not the Vertex AI product.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "10,001+",
+      "LinkedIn company-size band for Google Cloud; Alphabet reports over 180,000 employees group-wide. Figures describe the company, not the Vertex AI product.",
+    ),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/google-cloud/",
       xUrl: "https://x.com/googlecloud",
-      linkedinFollowers: field(3420000, "estimated", {
-        note: "Approximate LinkedIn follower count, rounded by scale, captured on the snapshot date. Figures describe the Google Cloud company accounts, not the Vertex AI product.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(571000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date. Figures describe the Google Cloud company accounts, not the Vertex AI product.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(3400000, "LinkedIn"),
+      xFollowers: approxFollowers(571000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notComparable(
-        "The catalogue is published per region and per deployment type rather than as one platform-wide list, so a single model count is not comparable with a gateway catalogue count.",
-      ),
+      official("200+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["site", "research"],
+        note: "Vendor figure. Vertex AI is a broader cloud AI platform whose catalogue is published per region and deployment type, so this is not directly comparable with fixed gateway catalogues without defining the catalogue scope.",
+      }),
     ),
     providers: metric(
+      official("20+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Model providers onboarded by Google Cloud. Not directly comparable with independent upstream provider counts on dedicated routers.",
+      }),
+    ),
+    routes: metric(
       notComparable(
-        "Models are onboarded by the cloud provider rather than reached through independent upstream provider accounts, so an upstream provider count does not describe this product.",
+        "Routes and endpoints are region- and model-dependent, so no single count is comparable with a gateway route count.",
       ),
     ),
     modalities: field(
       ["llm", "vision", "image", "video", "stt", "tts", "translation", "embeddings"],
       "vendor-stated",
-      { note: VENDOR_NOTE, sources: ["docs"] },
+      { note: VENDOR_NOTE, sources: ["docs", "research"] },
     ),
-    deployment: field(["hosted", "vpc"], "vendor-stated", { sources: ["docs"] }),
+    openaiCompatible: field("partial", "vendor-stated", {
+      note: "Vertex AI exposes its own APIs; an OpenAI-compatible chat completions surface is documented for a subset of models.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "vpc"], "vendor-stated", {
+      note: "Hosted, with VPC / private networking options.",
+      sources: ["docs", "research"],
+    }),
     euResidency: field("eu-available", "verified", {
       note: "Documented EU regions are selectable. Availability of individual models differs by region.",
       sources: ["docs"],
     }),
-    gatewayLocations: field(
-      ["Documented Google Cloud regions, including EU regions"],
-      "vendor-stated",
-      { sources: ["docs"] },
-    ),
+    gatewayLocations: field(["Google Cloud global regions, including EU regions"], "vendor-stated", {
+      sources: ["docs", "research"],
+    }),
     inferenceLocations: field(
       ["Within the selected region, subject to per-model availability"],
       "vendor-stated",
@@ -2418,25 +3016,32 @@ siteSource("https://aws.amazon.com/bedrock/"),
     ),
     vpc: field("yes", "vendor-stated", { sources: ["docs"] }),
     dpa: field("yes", "vendor-stated", { sources: ["site"] }),
-    openSource: field("no", "verified"),
-    pricingTransparency: field("public", "verified", { sources: ["site"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
+    zeroDataRetention: field("configurable", "vendor-stated", {
+      note: "Service dependent rather than a single platform-wide guarantee.",
+      sources: ["research"],
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     certifications: field(["ISO/IEC 27001", "SOC 2"], "vendor-stated", {
-      note: "Published on the provider's compliance pages. Scope varies by service and region.",
+      note: "Published on Google Cloud's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
     strengths: [
       "Broad modality range across text, vision, image, video, speech, translation and embeddings.",
-      "Region selection and data handling terms are documented.",
+      "Region selection and data handling terms are documented, with VPC / private networking options.",
     ],
     limitations: [
-      "Catalogue is limited to first-party and onboarded partner models.",
-      "Regional availability varies per model.",
+      "Catalogue is limited to first-party and onboarded partner models, and regional availability varies per model.",
+      "A single model count is not directly comparable with fixed gateway catalogues, and OpenAI compatibility is partial.",
     ],
     bestFor: ["Organisations already standardised on Google Cloud."],
     sources: [
-siteSource("https://cloud.google.com/vertex-ai"),
+      researchSource(),
+      siteSource("https://cloud.google.com/vertex-ai"),
       docsSource("https://cloud.google.com/vertex-ai/docs"),
-      linkedinSource(),
+      linkedinSource("https://www.linkedin.com/company/google-cloud/"),
       xSource("googlecloud"),
     ],
     lastVerified: DATASET_DATE,
@@ -2447,48 +3052,57 @@ siteSource("https://cloud.google.com/vertex-ai"),
     slug: "azure-ai-foundry",
     name: "Azure AI Foundry",
     website: "https://azure.microsoft.com/products/ai-foundry",
+    logo: "/logos/azure-ai-foundry.png",
     summary:
-      "Microsoft's platform for deploying and managing models from several providers within Azure subscriptions and regions.",
-    differentiator: "Model access inside an existing Azure subscription.",
+      "Microsoft's enterprise AI platform for deploying and managing models from several providers within Azure subscriptions and regions, with a very large model catalogue.",
+    differentiator:
+      "Microsoft enterprise AI platform with a very large model catalogue and Azure-native governance/deployment.",
     type: "hyperscaler",
     tier: "hyperscaler",
-    categories: ["enterprise", "eu-hosted", "multimodal"],
+    categories: ["eu-hosted", "multimodal", "enterprise"],
     jurisdictionBucket: "us",
     country: field("United States", "verified", {
       note: "Operated by Microsoft Corporation.",
-      sources: ["site"],
+      sources: ["site", "research"],
     }),
     countryCode: field("US", "verified", { sources: ["site"] }),
     euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("subsidiary", "verified", { sources: ["site"] }),
+    ownershipStatus: field("subsidiary", "verified", { sources: ["site", "research"] }),
     parentCompany: field("Microsoft Corporation", "verified", { sources: ["site"] }),
     productStatus: field("active", "verified", { sources: ["docs"] }),
-    employees: field({ band: "10,001+", min: 10001, max: null }, "verified", {
-      note: "LinkedIn company-size band. Figures describe the Microsoft company accounts, not the AI Foundry product.",
-      sources: ["linkedin"],
-      asOf: DATASET_DATE,
-    }),
+    employees: employees(
+      "10,001+",
+      "LinkedIn company-size band for Microsoft, which reports over 220,000 employees. Figures describe the company, not the AI Foundry product.",
+    ),
     social: {
-      linkedinUrl: null,
+      linkedinUrl: "https://www.linkedin.com/company/microsoft/",
       xUrl: "https://x.com/Azure",
-      linkedinFollowers: field(28970000, "estimated", {
-        note: "Approximate LinkedIn follower count, rounded by scale, captured on the snapshot date. Figures describe the Microsoft company accounts, not the AI Foundry product.",
-        sources: ["linkedin"],
-      }),
-      xFollowers: field(1000000, "estimated", {
-        note: "Approximate X follower count, rounded by scale, captured on the snapshot date. Figures describe the Microsoft company accounts, not the AI Foundry product.",
-        sources: ["x"],
-      }),
+      linkedinFollowers: approxFollowers(29000000, "LinkedIn"),
+      xFollowers: approxFollowers(1000000, "X"),
       snapshotDate: DATASET_DATE,
     },
     models: metric(
-      notComparable(
-        "The catalogue is published per region and per deployment type rather than as one platform-wide list, so a single model count is not comparable with a gateway catalogue count.",
-      ),
+      official("1,900+", DATASET_DATE, {
+        scope: "all-modalities",
+        sourceIds: ["docs", "research"],
+        note: "Microsoft documentation states the Foundry Models catalogue has more than 1,900 models. Another current Microsoft page says the broader Foundry platform can access more than 10,000 models; the comparable catalogue figure is used here and the broader figure is kept on record.",
+      }),
+      [
+        official("11,000+", DATASET_DATE, {
+          sourceIds: ["docs"],
+          note: "Broader Foundry platform figure, which covers more than the Foundry Models catalogue.",
+        }),
+      ],
     ),
     providers: metric(
+      official("20+", DATASET_DATE, {
+        sourceIds: ["docs", "research"],
+        note: "Model providers onboarded by Microsoft. Not directly comparable with independent upstream provider counts on dedicated routers.",
+      }),
+    ),
+    routes: metric(
       notComparable(
-        "Models are onboarded by the cloud provider rather than reached through independent upstream provider accounts, so an upstream provider count does not describe this product.",
+        "Routes and endpoints are region- and deployment-dependent, so no single count is comparable with a gateway route count.",
       ),
     ),
     modalities: field(
@@ -2505,15 +3119,22 @@ siteSource("https://cloud.google.com/vertex-ai"),
         "documents",
       ],
       "vendor-stated",
-      { note: VENDOR_NOTE, sources: ["docs"] },
+      { note: VENDOR_NOTE, sources: ["docs", "research"] },
     ),
-    deployment: field(["hosted", "vpc"], "vendor-stated", { sources: ["docs"] }),
+    openaiCompatible: field("partial", "vendor-stated", {
+      note: "Azure OpenAI deployments follow the OpenAI API shape with Azure-specific authentication and endpoints; other Foundry models use their own or the inference API.",
+      sources: ["docs", "research"],
+    }),
+    deployment: field(["hosted", "vpc"], "vendor-stated", {
+      note: "Hosted, with VPC / private networking options.",
+      sources: ["docs", "research"],
+    }),
     euResidency: field("eu-available", "verified", {
       note: "EU regions and EU Data Boundary commitments are documented and selectable.",
       sources: ["docs"],
     }),
-    gatewayLocations: field(["Documented Azure regions, including EU regions"], "vendor-stated", {
-      sources: ["docs"],
+    gatewayLocations: field(["Azure global regions, including EU regions"], "vendor-stated", {
+      sources: ["docs", "research"],
     }),
     inferenceLocations: field(
       ["Within the selected region or deployment type, subject to per-model availability"],
@@ -2522,25 +3143,32 @@ siteSource("https://cloud.google.com/vertex-ai"),
     ),
     vpc: field("yes", "vendor-stated", { sources: ["docs"] }),
     dpa: field("yes", "vendor-stated", { sources: ["site"] }),
-    openSource: field("no", "verified"),
-    pricingTransparency: field("public", "verified", { sources: ["site"] }),
+    openSource: field("no", "verified", { sources: ["site"] }),
+    zeroDataRetention: field("enterprise", "vendor-stated", {
+      note: "Enterprise and service dependent rather than a single platform-wide guarantee.",
+      sources: ["research"],
+    }),
+    pricingTransparency: field("public-with-enterprise", "verified", {
+      sources: ["site", "research"],
+    }),
     certifications: field(["ISO/IEC 27001", "SOC 2"], "vendor-stated", {
-      note: "Published on the provider's compliance pages. Scope varies by service and region.",
+      note: "Published on Microsoft's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
     strengths: [
       "Documented EU Data Boundary commitments in addition to region selection.",
-      "Widest documented modality coverage in this dataset, including OCR and document processing.",
+      "The largest vendor-published catalogue in this dataset — more than 1,900 models in Foundry Models — with ten documented modalities including OCR and document processing.",
     ],
     limitations: [
-      "Catalogue is limited to models Microsoft has onboarded.",
-      "Deployment type affects where processing happens, so the region setting alone is not the whole answer.",
+      "Catalogue is limited to models Microsoft has onboarded, and deployment type affects where processing happens.",
+      "Microsoft publishes two different catalogue figures (1,900+ and 10,000+) for different scopes, and OpenAI compatibility is partial.",
     ],
     bestFor: ["Organisations already standardised on Azure with EU boundary requirements."],
     sources: [
-siteSource("https://azure.microsoft.com/products/ai-foundry"),
-      docsSource("https://learn.microsoft.com/azure/ai-foundry/"),
-      linkedinSource(),
+      researchSource(),
+      siteSource("https://azure.microsoft.com/products/ai-foundry"),
+      docsSource("https://learn.microsoft.com/en-us/azure/machine-learning/foundry-models-overview"),
+      linkedinSource("https://www.linkedin.com/company/microsoft/"),
       xSource("Azure"),
     ],
     lastVerified: DATASET_DATE,
@@ -2549,11 +3177,12 @@ siteSource("https://azure.microsoft.com/products/ai-foundry"),
 
 /** Fields that remain deliberately open across most of the dataset. */
 export const OPEN_DATASET_FIELDS = [
-  "X / Twitter follower snapshots",
   "Funding history",
   "Pricing model detail",
   "Inference regions for managed gateways",
   "Founding years",
+  "Route counts, where a vendor publishes one",
+  "Registry confirmation for several operating entities",
 ];
 
 export { OPEN_FIELD };

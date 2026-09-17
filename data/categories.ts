@@ -1,5 +1,6 @@
-import type { CategoryDefinition, UseCase } from "@/types";
+import type { CategoryDefinition, RankingSignal, UseCase } from "@/types";
 import { latestMeasured } from "@/lib/metric";
+import { describeSignals, signal } from "@/lib/signals";
 import { QUANTIFIED_STATUSES } from "@/types/metric";
 
 /**
@@ -9,7 +10,51 @@ import { QUANTIFIED_STATUSES } from "@/types/metric";
  * list and exactly how the list is ordered. Nothing is ranked without a
  * measurable criterion, and `showTopThree` is false wherever a top three would
  * imply an ordering the data does not support.
+ *
+ * Score-ranked categories declare the recorded attributes they weigh and the
+ * weight of each, and print that declaration in their ranking criterion. The
+ * scoring itself lives in `lib/ranking.ts` and `lib/signals.ts` and never
+ * refers to a gateway by name.
  */
+
+/** Shared wording for a score-ranked criterion, so every page explains it the same way. */
+function scoreCriterion(signals: RankingSignal[], among: string): string {
+  return `Descending by a weighted score on a 0–100 scale, computed from recorded attributes only, ${among}: ${describeSignals(signals)}. Each attribute is normalised to 0–1 — residency labels by how unconditional they are, capabilities by the same rule, certifications capped at three, deployment by the share of customer-controlled options, provider and model counts on a logarithmic scale. An attribute that is not recorded earns nothing, and no gateway is placed by name. Entries recording none of these attributes are listed but not ranked.`;
+}
+
+const EU_GATEWAY_SIGNALS: RankingSignal[] = [
+  signal("euResidency", 3),
+  signal("zeroDataRetention", 1),
+  signal("certifications", 1),
+  signal("providerBreadth", 1),
+  signal("modelBreadth", 1),
+];
+
+const EU_HOSTED_SIGNALS: RankingSignal[] = [
+  signal("euResidency", 3),
+  signal("zeroDataRetention", 2),
+  signal("deploymentControl", 1),
+  signal("certifications", 1),
+];
+
+const ENTERPRISE_SIGNALS: RankingSignal[] = [
+  signal("deploymentControl", 3),
+  signal("certifications", 2),
+  signal("zeroDataRetention", 1),
+  signal("providerBreadth", 1),
+];
+
+/**
+ * Agent workloads call many models and tools through one gateway, so the
+ * category weighs how much an agent can reach (providers, models, modalities
+ * callable as tools) and whether its traffic is retained.
+ */
+const AGENT_SIGNALS: RankingSignal[] = [
+  signal("providerBreadth", 1),
+  signal("modelBreadth", 1),
+  signal("modalityBreadth", 1),
+  signal("zeroDataRetention", 1),
+];
 export const categories: CategoryDefinition[] = [
   {
     slug: "largest-model-catalogues",
@@ -42,7 +87,7 @@ export const categories: CategoryDefinition[] = [
     inclusionCriterion:
       "The gateway routes to more than one upstream provider, so a provider count is a meaningful attribute of it.",
     rankingCriterion:
-      "Descending by upstream provider count. Measured counts and provider-stated figures are both ranked here, and each row shows which it is — a floor such as 30+ is ranked on its floor value. Gateways whose provider set is configured by the customer, or who publish no count, are listed but not ranked.",
+      "Descending by upstream provider count. Measured counts and provider-stated figures are both ranked here, and each row shows which it is — a floor such as 30+ is ranked on its floor value, and where this project measured a count it takes precedence over a vendor figure of any date. Documented integration counts of customer-configured gateways are shown but not ranked, because what an operator connects is not the same quantity as what a hosted gateway serves; gateways that publish no count are listed but not ranked.",
     rankingMetric: "providers",
     showTopThree: true,
     icon: "Network",
@@ -58,12 +103,12 @@ export const categories: CategoryDefinition[] = [
     metaDescription:
       "AI gateways operated by companies incorporated in the EU. Company jurisdiction is listed separately from where requests are actually processed.",
     intro:
-      "Inclusion here is about the company, not the infrastructure. A gateway appears on this list because its operating company is recorded as incorporated in an EU member state — which says nothing on its own about where requests are processed or where models run. Within that group, the list is ordered by upstream provider breadth.",
+      "Inclusion here is about the company, not the infrastructure. A gateway appears on this list because its operating company is recorded as incorporated in an EU member state — which says nothing on its own about where requests are processed or where models run. Within that group, the list is ordered by the recorded EU-readiness attributes named below.",
     inclusionCriterion:
       "The operating company is recorded in the dataset as incorporated in an EU member state, confirmed from a registry filing.",
-    rankingCriterion:
-      "Descending by upstream provider count, among EU-incorporated companies only. Each row shows whether its figure was measured by this project or stated by the provider; a floor such as 30+ is ranked on its floor value. Entries with no published count are listed but not ranked.",
-    rankingMetric: "providers",
+    rankingCriterion: scoreCriterion(EU_GATEWAY_SIGNALS, "among EU-incorporated companies only"),
+    rankingMetric: "score",
+    signals: EU_GATEWAY_SIGNALS,
     showTopThree: true,
     icon: "Landmark",
     filter: (gateway) => gateway.euJurisdiction.value === true,
@@ -79,10 +124,13 @@ export const categories: CategoryDefinition[] = [
       "Inclusion here is about infrastructure, not incorporation. A gateway appears because there is a documented route to EU processing — by default, as a configurable option, for selected routes, under an enterprise agreement, or because the customer runs it themselves.",
     inclusionCriterion:
       "The dataset records a documented EU processing option, or the gateway is customer-deployed so residency follows the deployment.",
-    rankingCriterion:
-      "Not ranked. Residency labels describe different arrangements, not different amounts of the same thing.",
-    rankingMetric: "none",
-    showTopThree: false,
+    rankingCriterion: scoreCriterion(
+      EU_HOSTED_SIGNALS,
+      "among gateways with a documented EU processing route",
+    ),
+    rankingMetric: "score",
+    signals: EU_HOSTED_SIGNALS,
+    showTopThree: true,
     icon: "ShieldCheck",
     filter: (gateway) =>
       ["eu-by-default", "eu-available", "eu-routes", "enterprise-only", "self-hosted"].includes(
@@ -122,16 +170,25 @@ export const categories: CategoryDefinition[] = [
     intro:
       "Enterprise here means a documented deployment or governance capability, not a pricing tier. The attribute that matters most is whether the gateway can run inside infrastructure the organisation controls.",
     inclusionCriterion:
-      "The gateway is positioned as an enterprise product, or the dataset records documented VPC or on-premise deployment.",
-    rankingCriterion:
-      "Not ranked. Enterprise requirements differ too much between organisations for a single ordering to be meaningful.",
-    rankingMetric: "none",
-    showTopThree: false,
+      "The gateway is positioned as an enterprise product, or the dataset records a documented VPC, on-premise or private single-tenant deployment option, including one offered only under an enterprise agreement.",
+    rankingCriterion: scoreCriterion(
+      ENTERPRISE_SIGNALS,
+      "among gateways with documented enterprise deployment or positioning",
+    ),
+    rankingMetric: "score",
+    signals: ENTERPRISE_SIGNALS,
+    showTopThree: true,
     icon: "Building2",
-    filter: (gateway) =>
-      gateway.type === "enterprise" ||
-      gateway.vpc.value === "yes" ||
-      gateway.onPrem.value === "yes",
+    filter: (gateway) => {
+      const deployment = gateway.deployment.value ?? [];
+      const offered = (value: string | null) => value === "yes" || value === "enterprise";
+      return (
+        gateway.type === "enterprise" ||
+        offered(gateway.vpc.value) ||
+        offered(gateway.onPrem.value) ||
+        ["vpc", "on-prem", "private"].some((option) => deployment.includes(option as never))
+      );
+    },
   },
   {
     slug: "agent-gateways",
@@ -144,9 +201,13 @@ export const categories: CategoryDefinition[] = [
       "Agent support is recorded only where a gateway documents agent orchestration or Model Context Protocol capability. Tool calling that simply passes through from an upstream model is not counted.",
     inclusionCriterion:
       "The dataset records agent orchestration or Model Context Protocol support as a documented modality.",
-    rankingCriterion: "Not ranked. Listed alphabetically.",
-    rankingMetric: "none",
-    showTopThree: false,
+    rankingCriterion: scoreCriterion(
+      AGENT_SIGNALS,
+      "among gateways with documented agent orchestration or Model Context Protocol support",
+    ),
+    rankingMetric: "score",
+    signals: AGENT_SIGNALS,
+    showTopThree: true,
     icon: "Bot",
     filter: (gateway) => {
       const modalities = gateway.modalities.value ?? [];
@@ -196,7 +257,8 @@ export const officiallyStatedCatalogues: CategoryDefinition = {
   showTopThree: true,
   icon: "FileCheck",
   filter: (gateway) =>
-    ["official", "catalogue"].includes(gateway.models.current.status),
+    ["official", "catalogue"].includes(gateway.models.current.status) &&
+    latestMeasured(gateway.models) === null,
 };
 
 export function getCategory(slug: string): CategoryDefinition | undefined {

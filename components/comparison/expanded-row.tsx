@@ -7,8 +7,8 @@ import { CAPABILITY, OWNERSHIP_STATUS, PRICING_TRANSPARENCY, PRODUCT_STATUS } fr
 import { formatDate, formatFollowers, formatQualifiedCount } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { NoValue, ProvenanceMark } from "@/components/ui/data-status";
-import { MetricCell } from "@/components/ui/metric-value";
 import { SourceChips } from "@/components/ui/source-chips";
+import { CoverageDetail, OpenAiCompatibilityCell } from "@/components/comparison/cells";
 
 function Definition({
   label,
@@ -190,11 +190,18 @@ export function ExpandedRow({ gateway }: { gateway: Gateway }) {
             <Definition label="Parent company">
               <TextValue field={gateway.parentCompany} />
             </Definition>
-            <Definition label="Routes">
-              <MetricCell metric={gateway.routes} align="left" />
+            <Definition label="Routes / endpoints">
+              <CoverageDetail gateway={gateway} />
             </Definition>
-            <Definition label="Endpoints">
-              <MetricCell metric={gateway.endpoints} align="left" />
+            <Definition label="OpenAI compatible">
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <OpenAiCompatibilityCell field={gateway.openaiCompatible} size="sm" />
+                {gateway.openaiCompatible.value !== null && gateway.openaiCompatible.note ? (
+                  <span className="text-[12.5px] text-ink-muted">
+                    {gateway.openaiCompatible.note}
+                  </span>
+                ) : null}
+              </span>
             </Definition>
             <Definition label="Inference regions">
               <ListValue field={gateway.inferenceLocations} />

@@ -1,5 +1,5 @@
 import type { Metric, MetricStatus, MetricValue } from "@/types/metric";
-import { QUANTIFIED_STATUSES } from "@/types/metric";
+import { EVIDENCE_PRIORITY, QUANTIFIED_STATUSES } from "@/types/metric";
 import { formatCount } from "@/lib/format";
 
 /** Convenience constructors, so records read as prose rather than punctuation. */
@@ -95,24 +95,36 @@ export function observationsWithStatus(m: Metric, status: MetricStatus): MetricV
 /**
  * The value a ranking may use.
  *
- * Returns null unless the observation matches every constraint the ranking
+ * Returns null unless an observation matches every constraint the ranking
  * declares — status and, where the ranking sets one, scope. This is what stops
  * a route count, a vendor floor or a differently-scoped catalogue from being
  * ranked against directly measured, same-scope counts.
+ *
+ * Among the observations that qualify, the strongest evidence wins
+ * (`EVIDENCE_PRIORITY`), and recency breaks ties within one kind. A vendor
+ * floor published after a measurement therefore never displaces the
+ * measurement in a ranking; the table cell still shows the current figure and
+ * the measurement beneath it.
  */
 export function comparableValue(
   m: Metric,
   allowed: MetricStatus[],
   scope?: MetricValue["scope"],
 ): { value: number; observation: MetricValue } | null {
-  for (const observation of allObservations(m)) {
-    if (!allowed.includes(observation.status)) continue;
-    if (observation.value === undefined) continue;
-    if (scope && observation.scope && observation.scope !== scope) continue;
-    if (scope && !observation.scope) continue;
-    return { value: observation.value, observation };
-  }
-  return null;
+  const candidates = allObservations(m).filter((observation) => {
+    if (!allowed.includes(observation.status)) return false;
+    if (observation.value === undefined) return false;
+    if (scope && observation.scope && observation.scope !== scope) return false;
+    if (scope && !observation.scope) return false;
+    return true;
+  });
+  if (candidates.length === 0) return null;
+  // allObservations is already newest-first, and sort is stable.
+  candidates.sort(
+    (a, b) => EVIDENCE_PRIORITY.indexOf(a.status) - EVIDENCE_PRIORITY.indexOf(b.status),
+  );
+  const observation = candidates[0];
+  return { value: observation.value as number, observation };
 }
 
 /** The newest measured observation, used for "measured on" displays. */

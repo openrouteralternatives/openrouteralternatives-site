@@ -97,7 +97,7 @@ export function DatasetPanel({ stats }: { stats: DatasetStats }) {
 
       <p className="mt-4 border-t border-line pt-3 text-[12px] leading-relaxed text-ink-subtle">
         Counts are computed from the dataset on every build.{" "}
-        <Link href="/methodology" className="text-ink-muted underline underline-offset-2 hover:text-ink">
+        <Link href="/#methodology" className="text-ink-muted underline underline-offset-2 hover:text-ink">
           How each field is established
         </Link>
       </p>

@@ -11,14 +11,20 @@ import { Hero } from "@/components/home/hero";
 import { TrustStrip } from "@/components/home/trust-strip";
 import { EuExplainer } from "@/components/home/eu-explainer";
 import { UseCases } from "@/components/home/use-cases";
-import { MethodologyPreview } from "@/components/home/methodology-preview";
-import { LatestUpdates } from "@/components/home/latest-updates";
+import { Methodology } from "@/components/home/methodology";
+import { Contribute } from "@/components/home/contribute";
+import { BlogTeaser } from "@/components/home/blog-teaser";
 import { ComparisonTable } from "@/components/comparison/comparison-table";
 import { DataLegend } from "@/components/comparison/data-legend";
 import { CategoryGrid } from "@/components/categories/category-grid";
 import { CategoryRanking } from "@/components/categories/category-ranking";
 import { GatewayCard } from "@/components/gateways/gateway-card";
 
+/**
+ * The homepage is the product: hero, the comparison table, the methodology
+ * that explains how to read it, category discovery, the featured
+ * cross-section, how to contribute, and the blog teaser.
+ */
 export default function HomePage() {
   const gateways = sortByName(allGateways());
   const stats = datasetStats(categories.length);
@@ -42,13 +48,13 @@ export default function HomePage() {
           <SectionHeading
             id="compare-heading"
             title="Compare AI gateways"
-            description="Model counts are dated snapshots. Where available, catalogues are measured directly from public model endpoints."
+            description="Model counts are dated snapshots. Where available, catalogues are measured directly from public model endpoints. OpenAI compatibility is read from documentation and shown as a label, never a score."
             action={
               <Link
                 href="/compare"
                 className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-brand-ink hover:underline"
               >
-                Open full comparison
+                Open full-width table
                 <ArrowRight aria-hidden="true" className="size-3.5" />
               </Link>
             }
@@ -57,7 +63,7 @@ export default function HomePage() {
           <div className="mt-4">
             <ComparisonTable
               gateways={gateways}
-              caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, modalities, deployment and company data."
+              caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, OpenAI compatibility, modalities, deployment and company data."
             />
           </div>
           <p className="mt-3 text-[12.5px] text-ink-subtle">
@@ -66,6 +72,8 @@ export default function HomePage() {
           </p>
         </Container>
       </section>
+
+      <Methodology />
 
       <section aria-labelledby="categories-heading" className="py-14">
         <Container>
@@ -122,11 +130,9 @@ export default function HomePage() {
         </Container>
       </section>
 
-      <MethodologyPreview />
+      <Contribute />
 
-      <div className="py-14">
-        <LatestUpdates />
-      </div>
+      <BlogTeaser />
 
       <JsonLd
         data={itemListJsonLd({

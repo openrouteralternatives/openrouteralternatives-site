@@ -8,6 +8,7 @@ import {
   DeploymentCell,
   JurisdictionCell,
   ModalityCell,
+  OpenAiCompatibilityCell,
   ProvidersCell,
   ResidencyCell,
 } from "@/components/comparison/cells";
@@ -83,6 +84,12 @@ export function MobileGatewayCard({ gateway }: { gateway: Gateway }) {
       </dl>
 
       <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-ink-subtle">
+            OpenAI compatible
+          </p>
+          <OpenAiCompatibilityCell field={gateway.openaiCompatible} size="sm" />
+        </div>
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-ink-subtle">
             Modalities

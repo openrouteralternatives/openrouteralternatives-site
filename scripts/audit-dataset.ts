@@ -12,11 +12,15 @@
  *  - a certification claimed for a vendor that states it holds none
  *  - a category whose filter matches nothing
  *  - a ranked category whose members have no value for its metric
+ *  - a logo path that points at a file which does not exist in /public
+ *  - an OpenAI-compatibility value recorded without a status that supports it
  *
  * It then classifies every remaining unresolved field as either a genuine
  * conflict, a not-applicable attribute, or an open research item, and prints
  * the breakdown so the three can never be confused.
  */
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { gateways } from "@/data/gateways";
 import { categories } from "@/data/categories";
 import { resolveCategory } from "@/lib/ranking";
@@ -144,9 +148,86 @@ for (const gateway of gateways) {
   if (!gateway.website && gateway.sources.some((s) => s.id === "site")) {
     warnings.push(`${gateway.name}: cites an official-website source but has no website URL`);
   }
+
+  // Public links must be well-formed absolute URLs on the expected hosts.
+  const checkUrl = (label: string, url: string | null, host?: RegExp) => {
+    if (!url) return;
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      errors.push(`${gateway.name}: ${label} "${url}" is not a valid URL`);
+      return;
+    }
+    if (parsed.protocol !== "https:") errors.push(`${gateway.name}: ${label} "${url}" is not https`);
+    if (host && !host.test(parsed.hostname)) {
+      errors.push(`${gateway.name}: ${label} "${url}" is not on the expected host`);
+    }
+    if (parsed.search) warnings.push(`${gateway.name}: ${label} "${url}" carries a query string`);
+  };
+  checkUrl("website", gateway.website);
+  checkUrl("LinkedIn URL", gateway.social.linkedinUrl, /(^|\.)linkedin\.com$/);
+  checkUrl("X URL", gateway.social.xUrl, /^(x|twitter)\.com$/);
+  for (const source of gateway.sources) checkUrl(`source ${source.id}`, source.url);
+
+  // Ownership relationships must be internally consistent.
+  const ownership = gateway.ownershipStatus.value;
+  if ((ownership === "acquired" || ownership === "subsidiary") && !gateway.parentCompany.value) {
+    errors.push(`${gateway.name}: ownership is "${ownership}" but no parent company is recorded`);
+  }
+  if (ownership === "independent" && gateway.parentCompany.value) {
+    errors.push(`${gateway.name}: ownership is independent but a parent company is recorded`);
+  }
+
+  // Deployment flags must agree with the deployment list. A self-hosted
+  // gateway can be placed in a VPC or on-premise by definition, so the flags
+  // are only checked against the list for products that are not self-hosted.
+  const deployment = gateway.deployment.value ?? [];
+  const selfHosted = deployment.includes("self-hosted");
+  if (gateway.vpc.value === "yes" && gateway.deployment.value && !selfHosted && !deployment.includes("vpc")) {
+    warnings.push(`${gateway.name}: vpc is "yes" but deployment does not list vpc`);
+  }
+  if (gateway.onPrem.value === "yes" && gateway.deployment.value && !selfHosted && !deployment.includes("on-prem")) {
+    warnings.push(`${gateway.name}: onPrem is "yes" but deployment does not list on-prem`);
+  }
+
+  // A logo path must resolve to a locally stored asset. The logo component has
+  // no runtime fallback for a missing file, so a broken path is a build defect.
+  if (gateway.logo) {
+    if (!gateway.logo.startsWith("/logos/")) {
+      errors.push(`${gateway.name}: logo "${gateway.logo}" must live under /public/logos`);
+    } else if (!existsSync(path.join(process.cwd(), "public", gateway.logo))) {
+      errors.push(`${gateway.name}: logo file "${gateway.logo}" does not exist under /public`);
+    }
+  }
+
+  // A recorded OpenAI-compatibility value must carry evidence. "Unknown" is a
+  // value in its own right (checked, not settled) and needs a source too.
+  const openai = gateway.openaiCompatible;
+  if (openai.value !== null) {
+    if (openai.status === "needs-verification") {
+      errors.push(`${gateway.name}: openaiCompatible "${openai.value}" recorded with a needs-verification status`);
+    }
+    if (!openai.sources?.length) {
+      warnings.push(`${gateway.name}: openaiCompatible "${openai.value}" has no source reference`);
+    }
+  }
 }
 
 // --- Categories ------------------------------------------------------------
+// The `categories` list on a record is documentation; membership itself is
+// evaluated from the category filters. The two must agree, or a profile would
+// name a category the data does not support (or omit one it does).
+for (const gateway of gateways) {
+  const computed = categories.filter((category) => category.filter(gateway)).map((c) => c.slug);
+  const declared = [...gateway.categories].sort();
+  if (declared.join(",") !== [...computed].sort().join(",")) {
+    errors.push(
+      `${gateway.name}: declared categories [${declared.join(", ")}] differ from filter membership [${computed.sort().join(", ")}]`,
+    );
+  }
+}
+
 for (const category of categories) {
   const result = resolveCategory(category);
   if (result.members.length === 0) {
@@ -159,6 +240,9 @@ for (const category of categories) {
   }
   if (category.rankingMetric !== "none" && !category.rankingCriterion.trim()) {
     errors.push(`Category "${category.slug}" ranks without stating a criterion`);
+  }
+  if (category.rankingMetric === "score" && !(category.signals?.length)) {
+    errors.push(`Category "${category.slug}" is score-ranked but declares no signals`);
   }
 }
 
@@ -177,6 +261,7 @@ const TRACKED: (keyof Gateway)[] = [
   "parentCompany",
   "productStatus",
   "modalities",
+  "openaiCompatible",
   "gatewayLocations",
   "inferenceLocations",
   "euResidency",
@@ -233,6 +318,10 @@ console.log(
   `Measured catalogues: ${gateways.filter((g) => latestMeasured(g.models)).length}`,
 );
 console.log(`EU-incorporated: ${gateways.filter((g) => g.euJurisdiction.value === true).length}`);
+console.log(`With a local logo asset: ${gateways.filter((g) => g.logo).length}`);
+console.log(
+  `OpenAI compatibility recorded: ${gateways.filter((g) => g.openaiCompatible.value !== null).length}`,
+);
 console.log("");
 console.log("Unresolved fields by classification:");
 console.log(`  genuine conflict : ${tally.conflict}`);

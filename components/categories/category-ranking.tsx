@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Info } from "lucide-react";
-import type { CategoryResult } from "@/lib/ranking";
+import { describeBreakdown, type CategoryResult, type RankedGateway } from "@/lib/ranking";
 import { formatDate } from "@/lib/format";
 import { GatewayLogo } from "@/components/gateways/gateway-logo";
 import { MetricStatusText, metricTooltip } from "@/components/ui/metric-value";
@@ -31,6 +31,15 @@ export function CategoryRanking({
   if (category.rankingMetric === "none") return null;
 
   const top = ranked.slice(0, limit);
+
+  // Score-ranked entries explain themselves through their signal breakdown;
+  // metric-ranked entries through the observation they came from.
+  const explain = (entry: RankedGateway): string =>
+    entry.observation
+      ? metricTooltip(entry.observation)
+      : entry.breakdown
+        ? describeBreakdown(entry.breakdown)
+        : "";
 
   return (
     <Card className="overflow-hidden">
@@ -64,8 +73,8 @@ export function CategoryRanking({
             <li key={entry.gateway.id}>
               <Link
                 href={`/gateways/${entry.gateway.slug}`}
-                title={metricTooltip(entry.observation)}
-                aria-label={`${entry.gateway.name}: ${entry.display}. ${metricTooltip(entry.observation)}`}
+                title={explain(entry)}
+                aria-label={`${entry.gateway.name}: ${entry.display}. ${explain(entry)}`}
                 className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-subtle"
               >
                 <span className="tnum w-5 shrink-0 font-mono text-[12px] text-ink-subtle">
@@ -77,7 +86,11 @@ export function CategoryRanking({
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-0.5">
                   <span className="tnum text-[13px] text-ink-muted">{entry.display}</span>
-                  <MetricStatusText value={entry.observation} />
+                  {entry.observation ? (
+                    <MetricStatusText value={entry.observation} />
+                  ) : (
+                    <span className="text-[11.5px] text-ink-subtle">Weighted criteria</span>
+                  )}
                 </span>
               </Link>
             </li>

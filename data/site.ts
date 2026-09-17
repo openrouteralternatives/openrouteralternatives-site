@@ -8,22 +8,29 @@ export const SITE = {
   locale: "en",
 } as const;
 
+/** Public repository. Reused wherever the site points at GitHub. */
+export const REPOSITORY_URL = "https://github.com/openrouteralternatives/openrouteralternatives-site";
+
+/**
+ * Primary navigation, kept to three entries.
+ *
+ * The homepage is the comparison, so "Compare" is the homepage. Categories are
+ * reached through the cards on the homepage rather than the navbar.
+ */
 export const NAV_LINKS = [
-  { href: "/compare", label: "Compare" },
+  { href: "/", label: "Compare" },
   { href: "/gateways", label: "Gateways" },
-  { href: "/categories", label: "Categories" },
-  { href: "/methodology", label: "Methodology" },
-  { href: "/eu-vs-eu-hosted", label: "EU vs EU-hosted" },
-  { href: "/changelog", label: "Changelog" },
+  { href: "/blog", label: "Blog" },
 ] as const;
 
 export const FOOTER_SECTIONS = [
   {
     title: "Compare",
     links: [
-      { href: "/compare", label: "All gateways" },
+      { href: "/#compare", label: "Comparison table" },
+      { href: "/compare", label: "Full-width table" },
       { href: "/gateways", label: "Gateway profiles" },
-      { href: "/categories", label: "Categories" },
+      { href: "/blog", label: "Blog" },
     ],
   },
   {
@@ -33,15 +40,16 @@ export const FOOTER_SECTIONS = [
       { href: "/categories/eu-gateways", label: "EU AI gateways" },
       { href: "/categories/eu-hosted", label: "EU-hosted gateways" },
       { href: "/categories/open-source", label: "Open-source gateways" },
+      { href: "/categories", label: "All categories" },
     ],
   },
   {
     title: "How this works",
     links: [
-      { href: "/methodology", label: "Methodology" },
-      { href: "/eu-vs-eu-hosted", label: "EU vs EU-hosted" },
-      { href: "/changelog", label: "Changelog" },
-      { href: "/methodology#corrections", label: "Request a correction" },
+      { href: "/#methodology", label: "Methodology" },
+      { href: "/#eu-explainer", label: "EU company vs EU-hosted" },
+      { href: "/#contribute", label: "How to contribute" },
+      { href: REPOSITORY_URL, label: "Source on GitHub", external: true },
     ],
   },
 ] as const;
@@ -51,25 +59,25 @@ export const TRUST_POINTS = [
   {
     title: "Direct model measurements",
     body: "Catalogue sizes are counted from public model endpoints where one exists, not copied from marketing pages.",
-    href: "/methodology#model-counting",
+    href: "/#model-counting",
     icon: "Gauge",
   },
   {
     title: "Source-backed company data",
     body: "Legal entity, jurisdiction and company scale come from registries, legal pages and LinkedIn size bands.",
-    href: "/methodology#source-hierarchy",
+    href: "/#source-hierarchy",
     icon: "FileSearch",
   },
   {
     title: "Point-in-time snapshots",
     body: "Every number carries the date it was observed, because catalogues and follower counts move.",
-    href: "/methodology#update-schedule",
+    href: "/#snapshots",
     icon: "CalendarClock",
   },
   {
     title: "Transparent methodology",
     body: "What counts as a model, a provider and EU residency is written down and applied to every entry.",
-    href: "/methodology",
+    href: "/#methodology",
     icon: "Scale",
   },
 ] as const;

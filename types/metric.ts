@@ -24,6 +24,14 @@ export type MetricStatus =
   | "not_published"
   /** Availability depends on what the customer configures. */
   | "variable"
+  /**
+   * The number of provider or model integrations the software documents.
+   * A real, dated count, but of what can be connected rather than of a
+   * hosted catalogue: the reachable set depends on the operator's
+   * configuration, so it is shown and sortable but never ranked against
+   * hosted catalogues.
+   */
+  | "documented"
   /** A figure exists but measures a different thing (routes, endpoints...). */
   | "not_comparable"
   /** Credible sources disagree and the disagreement is preserved. */
@@ -35,6 +43,23 @@ export const QUANTIFIED_STATUSES: MetricStatus[] = [
   "official",
   "catalogue",
   "secondary",
+  "documented",
+];
+
+/**
+ * Which evidence wins when a metric holds observations of several kinds.
+ *
+ * A count this project measured from a public endpoint outranks a figure
+ * read from a vendor's catalogue page, which outranks a marketing headline.
+ * Rankings pick by this order first and by recency second, so a newer vendor
+ * floor never displaces an older measurement of the same quantity.
+ */
+export const EVIDENCE_PRIORITY: MetricStatus[] = [
+  "measured",
+  "catalogue",
+  "official",
+  "secondary",
+  "documented",
 ];
 
 /**

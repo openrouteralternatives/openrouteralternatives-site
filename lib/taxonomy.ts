@@ -6,6 +6,7 @@ import type {
   GatewayType,
   JurisdictionBucket,
   Modality,
+  OpenAiCompatibility,
   OwnershipStatus,
   PricingTransparency,
   ProductStatus,
@@ -86,6 +87,14 @@ export const METRIC_STATUS: Record<MetricStatus, MetricTerm> = {
     tone: "info",
     icon: "SlidersHorizontal",
   },
+  documented: {
+    label: "Documented integrations",
+    short: "Integrations",
+    description:
+      "The number of provider or model integrations the software documents. The set actually reachable depends on what the operator configures, so the figure is shown but not ranked against hosted catalogues.",
+    tone: "info",
+    icon: "Plug",
+  },
   not_comparable: {
     label: "Not directly comparable",
     short: "Different metric",
@@ -112,6 +121,7 @@ export const METRIC_STATUS_ORDER: MetricStatus[] = [
   "secondary",
   "not_published",
   "variable",
+  "documented",
   "not_comparable",
   "conflicting",
 ];
@@ -309,16 +319,28 @@ export const DEPLOYMENT: Record<Deployment, Term> = {
     description: "Run from source or a container by the customer.",
     tone: "neutral",
   },
+  private: {
+    label: "Private",
+    description:
+      "Single-tenant deployment operated for one customer on an enterprise or custom plan. The vendor does not specify whether it runs in the customer's cloud or on their premises.",
+    tone: "neutral",
+  },
 };
 
 export const CAPABILITY: Record<Capability, Term> = {
   yes: { label: "Yes", description: "Documented as available.", tone: "ok" },
-  no: { label: "No", description: "Documented as unavailable.", tone: "neutral" },
+  configurable: {
+    label: "Configurable",
+    description:
+      "Available, but it depends on the plan, route, region or configuration rather than applying to every request by default.",
+    tone: "info",
+  },
   enterprise: {
     label: "Enterprise",
     description: "Available under an enterprise agreement.",
     tone: "caution",
   },
+  no: { label: "No", description: "Documented as unavailable.", tone: "neutral" },
   unknown: {
     label: "Not stated",
     description:
@@ -326,6 +348,49 @@ export const CAPABILITY: Record<Capability, Term> = {
     tone: "neutral",
   },
 };
+
+/**
+ * Sort order for capability columns such as ZDR. A blanket yes sorts first,
+ * then conditional availability, then enterprise-only, then no. This orders a
+ * column; it ranks nothing.
+ */
+export const CAPABILITY_ORDER: Capability[] = ["yes", "configurable", "enterprise", "no", "unknown"];
+
+/**
+ * OpenAI API compatibility.
+ *
+ * A comparison attribute, not a quality signal: nothing on the site is ranked
+ * by it. The labels describe what the vendor documents about its API surface.
+ */
+export const OPENAI_COMPATIBILITY: Record<OpenAiCompatibility, Term> = {
+  yes: {
+    label: "Yes",
+    description:
+      "The vendor documents an OpenAI-compatible API, so clients and SDKs written against the OpenAI API can be pointed at the gateway by changing the base URL and key.",
+    tone: "ok",
+  },
+  partial: {
+    label: "Partial",
+    description:
+      "Compatibility is documented for a subset of the OpenAI API only — for example chat completions but not the responses, embeddings or audio endpoints — or requires a compatibility layer.",
+    tone: "warn",
+  },
+  no: {
+    label: "No",
+    description:
+      "The gateway exposes its own API and documents no OpenAI-compatible endpoint. Existing OpenAI clients need an adapter or a rewrite.",
+    tone: "neutral",
+  },
+  unknown: {
+    label: "Unknown",
+    description:
+      "The vendor's documentation was checked and does not settle whether the API is OpenAI-compatible.",
+    tone: "neutral",
+  },
+};
+
+/** Sort order for the OpenAI-compatible column. Not a ranking of quality. */
+export const OPENAI_COMPATIBILITY_ORDER: OpenAiCompatibility[] = ["yes", "partial", "no", "unknown"];
 
 export const OWNERSHIP_STATUS: Record<OwnershipStatus, Term> = {
   independent: {
@@ -355,6 +420,15 @@ export const OWNERSHIP_STATUS: Record<OwnershipStatus, Term> = {
     tone: "neutral",
   },
 };
+
+/** Sort order for the ownership column: a deterministic grouping, not a judgement. */
+export const OWNERSHIP_ORDER: OwnershipStatus[] = [
+  "independent",
+  "subsidiary",
+  "acquired",
+  "community",
+  "unresolved",
+];
 
 export const PRODUCT_STATUS: Record<ProductStatus, Term> = {
   active: {
@@ -399,6 +473,14 @@ export const PRICING_TRANSPARENCY: Record<PricingTransparency, Term> = {
   },
 };
 
+/** Sort order for the pricing column: from fully public to sales-led. */
+export const PRICING_ORDER: PricingTransparency[] = [
+  "public",
+  "public-with-enterprise",
+  "contact-sales",
+  "unresolved",
+];
+
 export const SOURCE_KIND: Record<SourceKind, { label: string; icon: string }> = {
   "official-website": { label: "Official website", icon: "Globe" },
   "models-api": { label: "Models API", icon: "Terminal" },
@@ -440,7 +522,7 @@ export const EU_RESIDENCY_ORDER: EuResidency[] = [
   "needs-verification",
 ];
 
-export const DEPLOYMENT_ORDER: Deployment[] = ["hosted", "vpc", "on-prem", "self-hosted"];
+export const DEPLOYMENT_ORDER: Deployment[] = ["hosted", "vpc", "on-prem", "self-hosted", "private"];
 
 export const JURISDICTION_ORDER: JurisdictionBucket[] = [
   "eu",

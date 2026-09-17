@@ -103,7 +103,7 @@ export default function ComparePage() {
               <p className="mt-4 text-[12.5px] leading-relaxed text-ink-subtle">
                 Catalogues re-counted {formatDate(DATASET_DATE)}; earlier measurements are kept on
                 each profile rather than overwritten. See the{" "}
-                <Link href="/methodology" className="text-brand-ink hover:underline">
+                <Link href="/#methodology" className="text-brand-ink hover:underline">
                   methodology
                 </Link>{" "}
                 for how each field is established.

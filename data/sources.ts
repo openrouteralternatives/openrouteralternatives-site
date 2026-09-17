@@ -2,7 +2,7 @@ import type { SourceKind } from "@/types/source";
 
 /**
  * The source hierarchy this project applies when two sources disagree.
- * Rendered on the methodology page and used to order source chips.
+ * Rendered in the homepage methodology section and used to order source chips.
  */
 export const SOURCE_HIERARCHY: {
   rank: number;

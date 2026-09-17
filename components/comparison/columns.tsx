@@ -4,8 +4,17 @@ import { ChevronDown } from "lucide-react";
 import type { Gateway } from "@/types";
 import type { GatewayColumnDef, GatewayRow } from "@/lib/table";
 import { numeric } from "@/lib/table";
-import { EU_RESIDENCY, EU_RESIDENCY_ORDER, JURISDICTION } from "@/lib/taxonomy";
-import { comparableValue, latestMeasured } from "@/lib/metric";
+import {
+  CAPABILITY_ORDER,
+  EU_RESIDENCY,
+  EU_RESIDENCY_ORDER,
+  JURISDICTION,
+  JURISDICTION_ORDER,
+  OPENAI_COMPATIBILITY_ORDER,
+  OWNERSHIP_ORDER,
+  PRICING_ORDER,
+} from "@/lib/taxonomy";
+import { sortableCoverage, sortableModelCount, sortableProviderCount } from "@/lib/gateway";
 import {
   CapabilityCell,
   OwnershipCell,
@@ -14,6 +23,7 @@ import {
   CertificationsCell,
   DeploymentCell,
   EmployeesCell,
+  OpenAiCompatibilityCell,
   GatewayCell,
   JurisdictionCell,
   LocationsCell,
@@ -30,13 +40,56 @@ function residencyRank(gateway: Gateway): number {
   return EU_RESIDENCY_ORDER.indexOf(gateway.euResidency.value ?? "needs-verification");
 }
 
+/**
+ * Sort key for OpenAI compatibility: yes, partial, no, then a documented
+ * unknown. Rows with no recorded value return undefined so they stay at the
+ * bottom in both directions. This orders the column; it ranks nothing.
+ */
+function openAiCompatibilityRank(gateway: Gateway): number | undefined {
+  const value = gateway.openaiCompatible.value;
+  return value === null ? undefined : OPENAI_COMPATIBILITY_ORDER.indexOf(value);
+}
+
+/**
+ * Sort key for jurisdiction.
+ *
+ * The visible value is the country, but plain alphabetical order would
+ * scatter EU member states between non-EU countries. The key therefore
+ * groups by jurisdiction bucket first (EU, UK, US, other) and orders by
+ * country name within a bucket, so one click gathers the EU entries together.
+ * An unresolved jurisdiction returns undefined and stays at the bottom in
+ * both directions. The country itself is never altered to make this work.
+ */
+function jurisdictionKey(gateway: Gateway): string | undefined {
+  if (gateway.jurisdictionBucket === "unresolved") return undefined;
+  const bucket = JURISDICTION_ORDER.indexOf(gateway.jurisdictionBucket);
+  return `${bucket}:${gateway.country.value ?? "￿"}`;
+}
+
+/** Ordinal position of a zero-data-retention answer; no value sorts last. */
+function zdrRank(gateway: Gateway): number | undefined {
+  const value = gateway.zeroDataRetention.value;
+  return value === null ? undefined : CAPABILITY_ORDER.indexOf(value);
+}
+
+function ownershipRank(gateway: Gateway): number | undefined {
+  const value = gateway.ownershipStatus.value;
+  return value === null || value === "unresolved" ? undefined : OWNERSHIP_ORDER.indexOf(value);
+}
+
+function pricingRank(gateway: Gateway): number | undefined {
+  const value = gateway.pricingTransparency.value;
+  return value === null || value === "unresolved" ? undefined : PRICING_ORDER.indexOf(value);
+}
+
 export const COLUMN_LABELS: Record<string, string> = {
   gateway: "Gateway",
   jurisdiction: "Jurisdiction",
   residency: "EU residency",
   models: "Models",
   providers: "Providers",
-  routes: "Routes",
+  routes: "Routes / endpoints",
+  openaiCompatible: "OpenAI compatible",
   modalities: "Modalities",
   ownership: "Ownership",
   pricing: "Pricing",
@@ -71,7 +124,7 @@ export const columns: GatewayColumnDef[] = [
   },
   {
     id: "jurisdiction",
-    accessorFn: (gateway) => gateway.country.value ?? undefined,
+    accessorFn: jurisdictionKey,
     header: COLUMN_LABELS.jurisdiction,
     cell: ({ row }) => <JurisdictionCell gateway={row.original} />,
     sortFn: "alphanumeric",
@@ -83,14 +136,12 @@ export const columns: GatewayColumnDef[] = [
     accessorFn: residencyRank,
     header: COLUMN_LABELS.residency,
     cell: ({ row }) => <ResidencyCell gateway={row.original} />,
+    sortFn: numeric,
     meta: { width: 168 },
   },
   {
     id: "models",
-    accessorFn: (gateway) =>
-      latestMeasured(gateway.models)?.value ??
-      comparableValue(gateway.models, ["official", "catalogue", "secondary"])?.value ??
-      undefined,
+    accessorFn: sortableModelCount,
     header: COLUMN_LABELS.models,
     cell: ({ row }) => <ModelsCell gateway={row.original} />,
     sortFn: numeric,
@@ -99,27 +150,33 @@ export const columns: GatewayColumnDef[] = [
     meta: { align: "right", width: 150 },
   },
   {
-    id: "routes",
-    accessorFn: (gateway) =>
-      comparableValue(gateway.routes, ["measured", "official", "catalogue"])?.value ?? undefined,
-    header: COLUMN_LABELS.routes,
-    cell: ({ row }) => <RoutesCell gateway={row.original} />,
+    id: "providers",
+    accessorFn: sortableProviderCount,
+    header: COLUMN_LABELS.providers,
+    cell: ({ row }) => <ProvidersCell gateway={row.original} />,
     sortFn: numeric,
     sortDescFirst: true,
     sortUndefined: "last",
     meta: { align: "right", width: 118 },
   },
   {
-    id: "providers",
-    accessorFn: (gateway) =>
-      comparableValue(gateway.providers, ["measured", "official", "catalogue"])?.value ??
-      undefined,
-    header: COLUMN_LABELS.providers,
-    cell: ({ row }) => <ProvidersCell gateway={row.original} />,
+    id: "routes",
+    accessorFn: sortableCoverage,
+    header: COLUMN_LABELS.routes,
+    cell: ({ row }) => <RoutesCell gateway={row.original} />,
     sortFn: numeric,
     sortDescFirst: true,
     sortUndefined: "last",
-    meta: { align: "right", width: 112 },
+    meta: { align: "right", width: 156 },
+  },
+  {
+    id: "openaiCompatible",
+    accessorFn: openAiCompatibilityRank,
+    header: COLUMN_LABELS.openaiCompatible,
+    cell: ({ row }) => <OpenAiCompatibilityCell field={row.original.openaiCompatible} />,
+    sortFn: numeric,
+    sortUndefined: "last",
+    meta: { width: 150 },
   },
   {
     id: "modalities",
@@ -146,11 +203,14 @@ export const columns: GatewayColumnDef[] = [
     accessorFn: (gateway) => gateway.gatewayLocations.value?.join(", ") ?? undefined,
     header: COLUMN_LABELS.gatewayLocation,
     cell: ({ row }) => <LocationsCell field={row.original.gatewayLocations} />,
+    sortFn: "alphanumeric",
     sortUndefined: "last",
     meta: { width: 230 },
   },
   {
     id: "deployment",
+    // Number of documented deployment options: hosted only sorts below
+    // hosted plus VPC, which sorts below hosted plus VPC plus on-prem.
     accessorFn: (gateway) => gateway.deployment.value?.length ?? undefined,
     header: COLUMN_LABELS.deployment,
     cell: ({ row }) => <DeploymentCell field={row.original.deployment} />,
@@ -161,9 +221,10 @@ export const columns: GatewayColumnDef[] = [
   },
   {
     id: "zdr",
-    accessorFn: (gateway) => gateway.zeroDataRetention.value ?? undefined,
+    accessorFn: zdrRank,
     header: COLUMN_LABELS.zdr,
     cell: ({ row }) => <CapabilityCell field={row.original.zeroDataRetention} />,
+    sortFn: numeric,
     sortUndefined: "last",
     meta: { width: 116 },
   },
@@ -179,17 +240,19 @@ export const columns: GatewayColumnDef[] = [
   },
   {
     id: "ownership",
-    accessorFn: (gateway) => gateway.ownershipStatus.value ?? undefined,
+    accessorFn: ownershipRank,
     header: COLUMN_LABELS.ownership,
     cell: ({ row }) => <OwnershipCell gateway={row.original} />,
+    sortFn: numeric,
     sortUndefined: "last",
     meta: { width: 176 },
   },
   {
     id: "pricing",
-    accessorFn: (gateway) => gateway.pricingTransparency.value ?? undefined,
+    accessorFn: pricingRank,
     header: COLUMN_LABELS.pricing,
     cell: ({ row }) => <PricingCell gateway={row.original} />,
+    sortFn: numeric,
     sortUndefined: "last",
     meta: { width: 158 },
   },

@@ -5,13 +5,14 @@ import {
   Info,
   Minus,
   Newspaper,
+  Plug,
   SlidersHorizontal,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import type { Metric, MetricValue } from "@/types/metric";
 import { METRIC_STATUS } from "@/lib/taxonomy";
-import { metricDisplay } from "@/lib/metric";
+import { allObservations, metricDisplay } from "@/lib/metric";
 import { formatDateShort } from "@/lib/format";
 import { InfoTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ const ICONS: Record<string, LucideIcon> = {
   Database,
   Newspaper,
   Minus,
+  Plug,
   SlidersHorizontal,
   Info,
   TriangleAlert,
@@ -47,38 +49,87 @@ export function metricTooltip(value: MetricValue): string {
 }
 
 /**
+ * The figure to print for a metric.
+ *
+ * A quantified current observation prints as itself. A "multiple figures"
+ * status has no single value, so the figures on record are printed together
+ * (at most two), which says more than the word "multiple" would. Every other
+ * unquantified status prints nothing here and lets the evidence line explain.
+ */
+export function metricFigure(metric: Metric): string | null {
+  const current = metric.current;
+  const shown = metricDisplay(current);
+  if (shown) return shown;
+  if (current.status !== "conflicting") return null;
+  const figures = Array.from(
+    new Set(
+      (metric.history ?? []).map(metricDisplay).filter((d): d is string => Boolean(d)),
+    ),
+  );
+  return figures.length ? figures.slice(0, 2).join(" / ") : null;
+}
+
+/**
+ * A figure of the other evidence kind, worth surfacing next to the current one.
+ *
+ * Beside a measurement, the vendor's own figure; beside a vendor or catalogue
+ * figure, this project's newest measurement (LLM scope first, so the pairing
+ * stays comparable). The gap between the two is itself informative.
+ */
+export function parallelObservation(
+  metric: Metric,
+): { label: string; observation: MetricValue } | null {
+  const current = metric.current;
+  const observations = allObservations(metric).filter((o) => o !== current && metricDisplay(o));
+
+  if (current.status === "measured") {
+    const vendor = observations.find((o) => o.status === "official" || o.status === "catalogue");
+    return vendor ? { label: "published", observation: vendor } : null;
+  }
+  if (current.status === "official" || current.status === "catalogue") {
+    const measured =
+      observations.find((o) => o.status === "measured" && o.scope === "llm") ??
+      observations.find((o) => o.status === "measured");
+    return measured ? { label: "measured", observation: measured } : null;
+  }
+  return null;
+}
+
+/**
  * The compact metric used throughout the comparison table.
  *
  * A figure sits on the first line and its evidence on the second, in small
  * muted text. Where there is no figure the evidence line carries the meaning
  * on its own, so an absent number still reads as a fact about the product
- * rather than as a hole in the research.
+ * rather than as a hole in the research. `caption` names what the figure
+ * counts where the column can hold more than one kind of quantity.
  */
 export function MetricCell({
   metric,
   className,
   align = "right",
+  caption,
 }: {
   metric: Metric;
   className?: string;
   align?: "left" | "right";
+  caption?: string;
 }) {
   const current = metric.current;
   const term = METRIC_STATUS[current.status];
-  const shown = metricDisplay(current);
+  const shown = metricFigure(metric);
   const tooltip = metricTooltip(current);
-
-  // A vendor figure recorded alongside a measurement is worth surfacing, since
-  // the gap between the two is itself informative.
-  const parallel = (metric.history ?? []).find(
-    (o) => o.status === "official" && metricDisplay(o) && current.status === "measured",
-  );
+  const parallel = parallelObservation(metric);
+  const evidence =
+    current.status === "measured" && current.date
+      ? `Measured ${formatDateShort(current.date)}`
+      : term.short;
 
   return (
     <InfoTip label={tooltip}>
       <button
         type="button"
-        aria-label={`${shown ?? term.label}. ${tooltip}`}
+        aria-label={`${shown ?? term.label}${caption ? ` ${caption}` : ""}. ${tooltip}`}
         className={cn(
           "cursor-help leading-tight",
           align === "right" ? "text-right" : "text-left",
@@ -90,24 +141,17 @@ export function MetricCell({
             <span className="tnum text-[15px] font-semibold text-ink">{shown}</span>
           ) : (
             <span className="text-[15px] font-semibold text-ink-subtle" aria-hidden="true">
-              {current.status === "variable"
-                ? "Variable"
-                : current.status === "not_comparable"
-                  ? "N/A"
-                  : current.status === "conflicting"
-                    ? "Multiple"
-                    : "—"}
+              —
             </span>
           )}
         </span>
         <span className={cn("block text-[11px]", TONE_TEXT[term.tone] ?? "text-ink-subtle")}>
-          {current.status === "measured" && current.date
-            ? `Measured ${formatDateShort(current.date)}`
-            : term.short}
+          {evidence}
+          {caption ? <span className="text-ink-subtle"> · {caption}</span> : null}
         </span>
         {parallel ? (
           <span className="block text-[11px] text-ink-subtle">
-            provider: {metricDisplay(parallel)}
+            {parallel.label}: {metricDisplay(parallel.observation)}
           </span>
         ) : null}
       </button>
@@ -122,8 +166,9 @@ export function MetricCell({
 export function MetricBlock({ metric, label }: { metric: Metric; label: string }) {
   const current = metric.current;
   const term = METRIC_STATUS[current.status];
-  const shown = metricDisplay(current);
+  const shown = metricFigure(metric);
   const Icon = ICONS[term.icon] ?? Info;
+  const parallel = parallelObservation(metric);
 
   return (
     <div>
@@ -151,6 +196,11 @@ export function MetricBlock({ metric, label }: { metric: Metric; label: string }
         {current.status === "measured" && current.date
           ? `Measured ${formatDateShort(current.date)}`
           : term.label}
+        {parallel ? (
+          <span className="text-ink-subtle">
+            · {parallel.label} {metricDisplay(parallel.observation)}
+          </span>
+        ) : null}
       </p>
       <p className="mt-2 text-[12.5px] leading-relaxed text-ink-muted">
         {metricTooltip(current)}

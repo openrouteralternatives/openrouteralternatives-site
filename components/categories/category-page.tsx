@@ -16,6 +16,7 @@ const METRIC_HEADING: Record<string, string> = {
   "measured-models": "Ranked by directly measured model count",
   providers: "Ranked by documented upstream provider count",
   modalities: "Ranked by documented modality breadth",
+  score: "Ranked by the category's declared criteria",
 };
 
 /**
@@ -96,7 +97,11 @@ export function CategoryPage({ category }: { category: CategoryDefinition }) {
               <SectionHeading
                 id="top-heading"
                 title="Ranked results"
-                description="Generated from the current dataset. Measured counts and provider-stated figures are ranked separately and never merged, because they are different kinds of evidence."
+                description={
+                  category.rankingMetric === "score"
+                    ? "Generated from the current dataset. Each position is a weighted sum of the recorded attributes named in the ranking criterion above, on a 0–100 scale; an attribute that is not recorded earns nothing, and no gateway is placed by name."
+                    : "Generated from the current dataset. Measured counts and provider-stated figures are ranked separately and never merged, because they are different kinds of evidence."
+                }
               />
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
                 <CategoryRanking
@@ -137,7 +142,7 @@ export function CategoryPage({ category }: { category: CategoryDefinition }) {
                 <p className="text-[13.5px] leading-relaxed text-ink-muted">
                   No gateway in the dataset currently meets this criterion. Rather than relaxing the
                   criterion to fill the page, the list stays empty until a value is verified.{" "}
-                  <Link href="/methodology" className="text-brand-ink hover:underline">
+                  <Link href="/#methodology" className="text-brand-ink hover:underline">
                     See how fields are verified
                   </Link>
                   .

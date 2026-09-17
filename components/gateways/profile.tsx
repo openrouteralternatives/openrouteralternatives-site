@@ -8,15 +8,16 @@ import {
   GATEWAY_TYPE,
   JURISDICTION,
   MODALITY,
+  OPENAI_COMPATIBILITY,
   OWNERSHIP_STATUS,
   PRICING_TRANSPARENCY,
   PRODUCT_STATUS,
 } from "@/lib/taxonomy";
-import { resolveSources } from "@/lib/gateway";
+import { resolveSources, routesOrEndpoints, secondaryCoverage } from "@/lib/gateway";
 import { allObservations, metricDisplay } from "@/lib/metric";
+import { categoriesFor } from "@/lib/ranking";
 import { MetricBlock, MetricStatusChip } from "@/components/ui/metric-value";
 import { getSelfHostedDetail } from "@/data/self-hosted";
-import { getCategory } from "@/data/categories";
 import {
   flagEmoji,
   formatDate,
@@ -28,6 +29,7 @@ import { NoValue, ProvenanceMark, StatusChip } from "@/components/ui/data-status
 import { SourceChips } from "@/components/ui/source-chips";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GatewayLogo } from "@/components/gateways/gateway-logo";
+import { OpenAiCompatibilityCell } from "@/components/comparison/cells";
 import { Container } from "@/components/layout/container";
 
 function Section({
@@ -154,6 +156,9 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
   const jurisdiction = JURISDICTION[gateway.jurisdictionBucket];
   const type = GATEWAY_TYPE[gateway.type];
   const selfHosted = getSelfHostedDetail(gateway.id);
+  const coverage = routesOrEndpoints(gateway);
+  const secondary = secondaryCoverage(gateway);
+  const memberOf = categoriesFor(gateway);
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -335,26 +340,44 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                 description="Models are distinct models addressable through the public API. Routes are model × provider combinations and are counted separately."
               >
                 <dl>
-                  <Row label="Routes">
+                  <Row label="Routes / endpoints">
                     <span>
                       <span className="tnum font-medium">
-                        {metricDisplay(gateway.routes.current) ?? "—"}
-                      </span>{" "}
-                      <MetricStatusChip value={gateway.routes.current} />
+                        {metricDisplay(coverage.metric.current) ?? "—"}
+                      </span>
+                      {metricDisplay(coverage.metric.current) ? (
+                        <span className="text-[12.5px] text-ink-muted"> {coverage.kind}</span>
+                      ) : null}{" "}
+                      <MetricStatusChip value={coverage.metric.current} />
+                      {secondary ? (
+                        <span className="mt-1 block text-[13px] text-ink-muted">
+                          Also{" "}
+                          <span className="tnum font-medium text-ink">
+                            {metricDisplay(secondary.metric.current)}
+                          </span>{" "}
+                          {secondary.kind} <MetricStatusChip value={secondary.metric.current} />
+                        </span>
+                      ) : null}
                       <span className="mt-1 block text-[12.5px] text-ink-subtle">
-                        Model × provider combinations. Counted separately from models and never
-                        presented as a model count.
+                        A route is one model served by one provider; an endpoint is an
+                        individually addressable API entry as the vendor publishes it. Both are
+                        counted separately from models and never derived from each other or from
+                        modalities.
                       </span>
                     </span>
                   </Row>
-                  <Row label="Endpoints">
-                    <span>
-                      <span className="tnum font-medium">
-                        {metricDisplay(gateway.endpoints.current) ?? "—"}
-                      </span>{" "}
-                      <MetricStatusChip value={gateway.endpoints.current} />
-                      <span className="mt-1 block text-[12.5px] text-ink-subtle">
-                        Individually addressable API entries, where the vendor publishes them.
+                  <Row label="OpenAI compatible">
+                    <span className="inline-flex flex-col gap-1.5">
+                      <span>
+                        <OpenAiCompatibilityCell field={gateway.openaiCompatible} size="sm" />
+                      </span>
+                      <span className="text-[12.5px] leading-relaxed text-ink-muted">
+                        {gateway.openaiCompatible.value !== null
+                          ? OPENAI_COMPATIBILITY[gateway.openaiCompatible.value].description
+                          : "Not recorded in the current dataset revision. Compatibility is read from vendor documentation, never assumed."}
+                        {gateway.openaiCompatible.value !== null && gateway.openaiCompatible.note
+                          ? ` ${gateway.openaiCompatible.note}`
+                          : ""}
                       </span>
                     </span>
                   </Row>
@@ -632,7 +655,7 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                 <SourceChips sources={gateway.sources} showDates />
                 <p className="mt-5 text-[13px] text-ink-muted">
                   Record last verified {formatDate(gateway.lastVerified)}.{" "}
-                  <Link href="/methodology#corrections" className="text-brand-ink hover:underline">
+                  <Link href="/#corrections" className="text-brand-ink hover:underline">
                     Request a correction
                   </Link>{" "}
                   if something here is wrong or out of date.
@@ -683,13 +706,13 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                 <h2 className="text-[13px] font-semibold uppercase tracking-[0.07em] text-ink-subtle">
                   Categories
                 </h2>
-                {gateway.categories.length > 0 ? (
+                {memberOf.length > 0 ? (
                   <ul className="mt-3 flex flex-wrap gap-1.5">
-                    {gateway.categories.map((slug) => (
-                      <li key={slug}>
-                        <Link href={`/categories/${slug}`}>
+                    {memberOf.map((category) => (
+                      <li key={category.slug}>
+                        <Link href={`/categories/${category.slug}`}>
                           <Badge tone="outline" size="sm">
-                            {getCategory(slug)?.name ?? slug}
+                            {category.name}
                           </Badge>
                         </Link>
                       </li>

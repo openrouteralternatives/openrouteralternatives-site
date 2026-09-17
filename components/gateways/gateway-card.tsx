@@ -3,8 +3,9 @@ import { ArrowRight } from "lucide-react";
 import type { Gateway } from "@/types";
 import { EU_RESIDENCY, MODALITY } from "@/lib/taxonomy";
 import { flagEmoji } from "@/lib/format";
-import { metricDisplay } from "@/lib/metric";
+import type { Metric as MetricRecord } from "@/types/metric";
 import { METRIC_STATUS } from "@/lib/taxonomy";
+import { metricFigure } from "@/components/ui/metric-value";
 import { Badge } from "@/components/ui/badge";
 import { GatewayLogo } from "@/components/gateways/gateway-logo";
 import { cn } from "@/lib/utils";
@@ -29,10 +30,30 @@ function Metric({
   );
 }
 
+/**
+ * A metric on a card: the figure where one exists, a quiet dash where none
+ * does, and the evidence status beneath in both cases so an absent number
+ * still reads as a fact about the product.
+ */
+function cardMetric(metric: MetricRecord): { value: React.ReactNode; sub: string } {
+  const figure = metricFigure(metric);
+  const term = METRIC_STATUS[metric.current.status];
+  return {
+    value: figure ?? (
+      <span aria-hidden="true" className="text-[14.5px] font-semibold text-ink-subtle">
+        —
+      </span>
+    ),
+    sub: term.short,
+  };
+}
+
 /** Card used by the featured grid and by category pages. */
 export function GatewayCard({ gateway, className }: { gateway: Gateway; className?: string }) {
   const modalities = (gateway.modalities.value ?? []).slice(0, 3);
   const residency = EU_RESIDENCY[gateway.euResidency.value ?? "needs-verification"];
+  const models = cardMetric(gateway.models);
+  const providers = cardMetric(gateway.providers);
 
   return (
     <article
@@ -61,36 +82,8 @@ export function GatewayCard({ gateway, className }: { gateway: Gateway; classNam
       <p className="px-5 text-[13px] leading-relaxed text-ink-muted">{gateway.differentiator}</p>
 
       <dl className="mt-4 grid grid-cols-2 gap-4 px-5">
-        <Metric
-          label="Models"
-          value={
-            metricDisplay(gateway.models.current) ?? (
-              <span className="text-[13px] font-normal text-ink-subtle">
-                {METRIC_STATUS[gateway.models.current.status].label}
-              </span>
-            )
-          }
-          sub={
-            metricDisplay(gateway.models.current)
-              ? METRIC_STATUS[gateway.models.current.status].short
-              : undefined
-          }
-        />
-        <Metric
-          label="Providers"
-          value={
-            metricDisplay(gateway.providers.current) ?? (
-              <span className="text-[13px] font-normal text-ink-subtle">
-                {METRIC_STATUS[gateway.providers.current.status].label}
-              </span>
-            )
-          }
-          sub={
-            metricDisplay(gateway.providers.current)
-              ? METRIC_STATUS[gateway.providers.current.status].short
-              : undefined
-          }
-        />
+        <Metric label="Models" value={models.value} sub={models.sub} />
+        <Metric label="Providers" value={providers.value} sub={providers.sub} />
       </dl>
 
       <div className="mt-auto flex flex-wrap items-center gap-1.5 p-5 pt-4">

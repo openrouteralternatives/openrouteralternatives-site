@@ -8,6 +8,57 @@ import type { ChangelogEntry } from "@/types";
  */
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-09-17",
+    kind: "dataset",
+    title: "Verified research pass applied as the source of truth",
+    summary:
+      "Every record was updated from the September 17, 2026 verified research over vendor sites, documentation and company profiles. Current vendor figures replace earlier vendor figures; this project's September 15 endpoint measurements stay on record in each metric's history and still drive the measured rankings. OpenRouter is no longer a row: it is the product the directory compares against, and the verified dataset does not list it as an alternative.",
+    changes: [
+      { gateway: "openrouter", field: "Entry", previous: "Listed as a reference row", next: "Removed from the dataset", source: "Sep 17, 2026 verified research (28 gateways, OpenRouter excluded)" },
+      { gateway: "eden-ai", field: "EU residency", previous: "EU routes", next: "EU by default — dedicated EU endpoint with zero data retention", source: "edenai.co/eu" },
+      { gateway: "eden-ai", field: "Models", previous: "360 measured (LLM, Sep 15) shown", next: "870 official catalogue (all modalities) shown; 360 measured kept and still ranked", source: "edenai.co" },
+      { gateway: "requesty", field: "Models / EU gateway", previous: "545 measured; EU gateway in Frankfurt", next: "211 unique models on the catalogue page (684 endpoints, 32 providers); EU endpoint on AWS France", source: "requesty.ai/models" },
+      { gateway: "opper", field: "Name / models", previous: "Opper; 700+ and 300+ conflicting", next: "Opper AI; 700+ with 44 providers in the directory", source: "opper.ai" },
+      { gateway: "maxim-ai", field: "Name / country / employees", previous: "Maxim AI; country unresolved; 11-50", next: "Maxim AI (Bifrost); United States (registry outstanding); 51-200", source: "LinkedIn, getmaxim.ai" },
+      { gateway: "truefoundry", field: "Country", previous: "Unresolved", next: "United States on the basis of operations; legal entity still unresolved", source: "Sep 17, 2026 research" },
+      { gateway: "eurouter", field: "Website / logo", previous: "Not confirmed; monogram", next: "eurouter.ai (the cited eu-router.ai did not resolve); official mark", source: "eurouter.ai" },
+      { gateway: "atlas-cloud", field: "Website / logo", previous: "Not confirmed; monogram", next: "atlascloud.ai; official mark", source: "atlascloud.ai" },
+      { gateway: "anannas", field: "Website / logo", previous: "Not confirmed; monogram", next: "anannas.ai; official mark", source: "anannas.ai" },
+      { gateway: "routescope", field: "Website / logo", previous: "Not confirmed; monogram", next: "routescope.ai; official mark", source: "routescope.ai" },
+      { gateway: "nexos-ai", field: "Logo / pricing", previous: "Monogram; contact sales", next: "Official mark; public pricing page with enterprise terms", source: "nexos.ai/pricing" },
+      { gateway: "respan", field: "Website", previous: "keywordsai.co", next: "respan.ai (brand changed February 2026; entity unchanged)", source: "respan.ai" },
+      { gateway: "edgee", field: "Website / providers / routes", previous: "edgee.cloud; 25+ providers; 972 routes", next: "edgee.ai; 60 'provider routes' on the routing page; 972 provider routes on the models page", source: "edgee.ai" },
+      { gateway: "portkey", field: "Endpoints / providers", previous: "1,600+ endpoints; providers not published", next: "313 endpoint combinations; 72 providers", source: "portkey.ai docs" },
+      { gateway: "azure-ai-foundry", field: "Models", previous: "Not directly comparable", next: "1,900+ (Foundry Models catalogue); 10,000+ platform figure kept on record", source: "learn.microsoft.com" },
+      { gateway: null, field: "Social snapshots", previous: "Recorded for 19 gateways on Sep 15", next: "LinkedIn and X URLs and follower counts recorded for 27 gateways on Sep 17", source: "LinkedIn and X company profiles" },
+      { gateway: null, field: "Zero data retention", previous: "Yes / enterprise / not stated", next: "Adds a 'configurable' answer for retention that depends on plan, route or region", source: "Sep 17, 2026 research" },
+    ],
+  },
+  {
+    date: "2026-09-17",
+    kind: "dataset",
+    title: "Vendor counts shown as floors; integration counts recorded; Eden AI MCP support",
+    summary:
+      "Exact-looking counts copied from vendor catalogue pages are now shown rounded down to the nearest ten (72 becomes 70+), with the exact figure kept for sorting and stated in the tooltip, because vendor pages change often. Integration counts of customer-configured gateways (LiteLLM, Kong, Envoy, Bifrost, Braintrust) are recorded under a new 'documented integrations' status: shown and sortable, never ranked against hosted catalogues. Rankings now prefer a measured count over a vendor figure of any date.",
+    changes: [
+      { gateway: "eden-ai", field: "Modalities / deployment", previous: "No MCP; hosted only", next: "MCP Server documented (expert models as MCP tools); private deployment on the custom plan recorded as 'private'", source: "edenai.co/docs/v3/expert-models/mcp-server; edenai.co/pricing" },
+      { gateway: "orq-ai", field: "Modalities", previous: "No MCP", next: "MCP access documented alongside the unified API", source: "Sep 17, 2026 research" },
+      { gateway: "litellm", field: "Models / providers", previous: "Configured by you (figures in notes)", next: "1,890+ models and 140+ providers as documented integrations", source: "litellm.ai" },
+      { gateway: "maxim-ai", field: "Models / providers", previous: "Configured by you (figures in notes)", next: "4,450+ catalogue entries and 90+ providers as documented integrations", source: "github.com/maximhq/bifrost" },
+      { gateway: "kong-ai-gateway", field: "Providers", previous: "Configured by you", next: "19 documented provider types", source: "developer.konghq.com" },
+      { gateway: "envoy-ai-gateway", field: "Providers", previous: "Configured by you", next: "15 documented providers", source: "aigateway.envoyproxy.io" },
+      { gateway: "google-vertex-ai", field: "Models", previous: "Not directly comparable", next: "200+ vendor figure, comparability caveat kept in the note", source: "cloud.google.com/vertex-ai" },
+    ],
+  },
+  {
+    date: "2026-09-17",
+    kind: "site",
+    title: "Routes and endpoints share one column; categories ranked by declared signals",
+    summary:
+      "Routes and endpoints remain separate fields but now share one labelled table column. EU, EU-hosted and enterprise categories are ranked by a weighted score over recorded attributes that each page declares, with no gateway placed by name. Jurisdiction sorting groups EU entries together; ZDR, ownership and pricing sort in a stated order. The site favicon is now the directory's own routing glyph rather than the OpenRouter mark.",
+    changes: [],
+  },
+  {
     date: "2026-09-15",
     kind: "social",
     title: "Company scale and social snapshots filled in",

@@ -6,6 +6,7 @@ import {
   Info,
   Minus,
   Newspaper,
+  Plug,
   SlidersHorizontal,
   TriangleAlert,
   type LucideIcon,
@@ -20,6 +21,7 @@ const ICONS: Record<string, LucideIcon> = {
   Database,
   Newspaper,
   Minus,
+  Plug,
   SlidersHorizontal,
   Info,
   TriangleAlert,
@@ -69,7 +71,7 @@ export function DataLegend({ className }: { className?: string }) {
         );
       })}
       <Link
-        href="/methodology#model-counting"
+        href="/#model-counting"
         className="ml-auto underline underline-offset-4 hover:text-ink"
       >
         How counts are established

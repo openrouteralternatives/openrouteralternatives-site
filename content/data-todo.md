@@ -1,43 +1,48 @@
 # Open data items
 
-What is still open after the September 15, 2026 measurement and validated-research
-revision, and what would close each item.
+What is still open after the September 17, 2026 verified research pass, and what would
+close each item.
 
-**Model and provider counts are no longer "open" in the old sense.** Every
-quantitative field now carries a `MetricStatus` explaining what kind of evidence
-it is, so a gateway without a number states *why*: the provider publishes none
-(`not_published`), the catalogue is whatever the customer configures
-(`variable`), the only published figure counts something else
-(`not_comparable`), or sources disagree (`conflicting`). Those are answers, not
-gaps, and they do not need closing. Filling any of these is a change to `data/gateways.ts`
-alone — no component changes are required.
+**The research pass is the source of truth for current vendor figures.** Every
+quantitative field carries a `MetricStatus` explaining what kind of evidence it is, so
+a gateway without a number states *why*: the provider publishes none
+(`not_published`), the catalogue is whatever the customer configures (`variable`), the
+only published figure counts something else (`not_comparable`), or sources disagree
+(`conflicting`). Those are answers, not gaps. Where the research pass published a
+figure it is the `current` observation; this project's September 15, 2026 endpoint
+measurements stay in each metric's `history` and still drive the measured rankings.
+
+Two display rules apply to vendor figures. A count copied from a vendor's catalogue or
+documentation page is shown rounded down to the nearest ten (72 → "70+"); counts under 20
+stay exact; the exact figure remains the sortable value and is stated in the tooltip.
+Integration counts of customer-configured gateways carry the `documented` status: shown and
+sortable, never ranked against hosted catalogues. Rankings prefer a measured count over a
+vendor figure of any date (`EVIDENCE_PRIORITY` in `types/metric.ts`).
 
 Run `npm run audit` after any edit. It classifies every unresolved field as a
 genuine conflict, a not-applicable attribute, or open research, and fails on
 integrity defects (duplicate entities, routes recorded as models, EU jurisdiction
 leaking into an EU residency label, a field citing a source the record does not
-have).
+have, a declared category list that differs from what the filters compute, a
+malformed public URL, or an ownership status without the parent it implies).
 
 ## Preserved conflicts — do not "resolve" these without new primary evidence
 
-These are the only unresolved fields that are unresolved on purpose. Each was
-researched and the evidence conflicted; publishing either side would be a guess.
-
 | Entry | Field | Why it stays unresolved |
 | --- | --- | --- |
-| TrueFoundry | Legal entity, country | Entity evidence conflicts. San Francisco is recorded as a city, which is a separate fact from incorporation. |
-| Edgee | Legal entity, country | French and US entity evidence conflicts, so it is **not** counted as EU-incorporated despite its European presence. |
-| Anannas | Country, legal entity | The published Terms contain an unfinished `[your jurisdiction]` placeholder, so there is no governing jurisdiction to read. |
-| Opper | Model count | The vendor publishes both 700+ and 300+. The higher figure is shown with the conflict noted, not presented as settled. |
-| Requesty | Model count | The vendor headline "600+" tracks its 684 endpoints; the deduplicated catalogue measures 545. Both are recorded, neither is presented as the other. |
+| TrueFoundry | Legal entity | Entity evidence conflicts. The research pass records United States operations, so the country is shown with a needs-verification mark, but the incorporating entity is deliberately left open. |
+| Edgee | Legal entity, country, ownership | The research pass records a French presence with an unresolved corporate structure; earlier evidence pointed to both a French and a US entity. Not counted as EU-incorporated. |
+| Anannas | Country, legal entity | The published Terms contain an unfinished `[your jurisdiction]` placeholder. United States operations are recorded, but incorporation is not inferred from them. |
+| Novita AI | Country, legal entity | Operates from the United States and globally; no registry or legal page establishes the entity. Not inferred from operating locations. |
 | AI/ML API | Governing law | Terms name Estonian governing law while the entity is UAE-registered. Both observations are recorded side by side. |
+| Requesty | Model count | The vendor's catalogue page separates 211 unique models from 684 endpoints and a 600+ headline; this project measured 545 on September 15. All four figures are on record and none is presented as another. |
 
 ## Not applicable
 
-Recorded as `not-applicable` rather than missing: company fields on Envoy AI
-Gateway (a community project, not a company), zero-data-retention on self-hosted
-gateways (no vendor endpoint receives the traffic), and licence/repository on
-products documented as closed source.
+Recorded as `not-applicable` rather than missing: company fields on Envoy AI Gateway
+(a community project, not a company), zero-data-retention on self-hosted gateways (no
+vendor endpoint receives the traffic), certifications and pricing at the Envoy project
+level, and licence/repository on products documented as closed source.
 
 ## Open research
 
@@ -45,40 +50,32 @@ products documented as closed source.
 
 | Field | What closes it |
 | --- | --- |
-| Route counts | Vendor documentation or a catalogue exposing per-model providers. Measured for Cortecs (196) and llmgateway.io (571); published by Edgee (972). |
+| Route counts | Vendor documentation or a catalogue exposing per-model providers. Measured for Cortecs (196) and llmgateway.io (571); published by Edgee (972). Endpoint counts are measured for Eden AI (428), Requesty (684) and AI/ML API (943) and published by Portkey (313). |
 | Non-LLM catalogue counts | An enumerable endpoint for OCR, speech, image, video or document models. Only AI/ML API exposes one today (790 across all modalities). |
-| Social snapshots | Recorded for 19 gateways on September 15, 2026. Still open for AI/ML API, Cortecs, EUrouter, nexos.ai, Opper, Orq.ai, Requesty, Envoy AI Gateway and RouteScope. Capture LinkedIn and X on the same date so the pair stays comparable. |
-| LinkedIn profile URLs | Follower counts are recorded but the company-page URLs are not, so the figures are shown without a link. Add `social.linkedinUrl` once each slug is confirmed. |
+| Registry confirmation | Outstanding for Eden AI (entity), LiteLLM, Kong Inc., Maxim AI (H3 Labs Inc.) and TrueFoundry. Their countries are shown with a needs-verification mark. |
 | Funding history | A filing or the vendor's own announcement. |
-| Pricing model detail | The vendor's pricing page. `pricingTransparency` is now recorded for twelve entries — six of them measured from per-model pricing inside the public endpoints — but the free-text pricing model is still open for most. |
-| Inference regions | Per-model or per-route region documentation — not a single site-wide claim. |
+| Pricing model detail | The vendor's pricing page. `pricingTransparency` is recorded for every entry except RouteScope; the free-text pricing model is still open. |
+| Inference regions | Per-model or per-route region documentation — not a single site-wide claim. Recorded for Cortecs and the hyperscalers only. |
 | DPA and subprocessors | The vendor's legal pages. Recorded for Requesty and the hyperscalers only. |
+| Founding years | A registry filing or an about page; open for every entry. |
 
 ### Per gateway
 
-- **Founding years** — open for every entry. A registry filing or an about page
-  closes each one.
-
-- **Next catalogue refresh** — the September 15, 2026 measurement is complete for
-  all seven gateways with public endpoints. For the next one, append a new
-  `measured(...)` observation to `models.history` rather than editing an existing
-  figure, and keep the same counting rule so the snapshots stay comparable. The
-  measured ranking uses the newest observation at `llm` scope.
-- **Eden AI** — the operating legal entity has not been read from a registry
-  filing, and EU residency is recorded as `eu-routes` because EU processing is
-  documented for part of the catalogue rather than every route. A per-route or
-  per-region statement would let that be narrowed or widened.
-- **Orq.ai** — EU residency is deliberately open. The company is EU-incorporated,
-  but that is never used as evidence of where requests are processed.
-- **Novita AI** — no operating entity or jurisdiction established. None assumed.
-- **Maxim AI** — entity is H3 Labs Inc., but its country of registration has not
-  been read from a filing, so `jurisdictionBucket` stays `unresolved`.
-- **RouteScope** — nothing established. Listed so the dataset does not silently
-  drop a candidate, not because it can be compared yet.
-- **EUrouter, Atlas Cloud, Anannas, RouteScope** — official product URLs are not
-  confirmed, so `website` is `null` rather than a guessed domain. Their
-  vendor-sourced figures cite a `Vendor material` source with no link; the audit
-  warns about this so it stays visible.
-- **Certifications** — recorded for Eden AI, Orq.ai, nexos.ai, Cortecs, Edgee,
-  TrueFoundry, Not Diamond, Maxim AI and the hyperscalers. Atlas Cloud is
-  recorded as an explicit "none claimed". The rest are open.
+- **Next catalogue refresh** — append a new `measured(...)` observation to
+  `models.history` rather than editing an existing figure, and keep the same counting
+  rule so the snapshots stay comparable. The measured ranking uses the newest observation
+  at `llm` scope wherever it sits in the metric.
+- **Eden AI** — the operating legal entity has not been read from a registry filing. The
+  pricing page's "private deployments" option on the custom plan is recorded as the
+  `private` deployment option, because the vendor does not say whether it runs in the
+  customer's cloud or on-premise; a public statement of its form would let it be recorded
+  as VPC or on-premise.
+- **EUrouter** — the research pass cited `eu-router.ai`, which did not resolve when
+  checked; `eurouter.ai` carries the same KVK number and is recorded as the website.
+- **Anannas** — the vendor describes multimodal support without enumerating modalities,
+  so only text generation is recorded.
+- **RouteScope** — only the website is established. Listed so the dataset does not
+  silently drop a candidate, not because it can be compared yet.
+- **Social snapshots** — recorded for 27 gateways on September 17, 2026 with company-page
+  URLs. Still open: X follower counts for Cortecs, EUrouter and llmgateway.io, and any
+  verified account for RouteScope.

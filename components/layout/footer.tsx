@@ -28,12 +28,23 @@ export function Footer({ datasetDate }: { datasetDate: string }) {
               <ul className="mt-4 flex flex-col gap-2.5">
                 {section.links.map((link) => (
                   <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      className="text-[13.5px] text-ink-muted transition-colors hover:text-ink"
-                    >
-                      {link.label}
-                    </Link>
+                    {"external" in link && link.external ? (
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[13.5px] text-ink-muted transition-colors hover:text-ink"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        className="text-[13.5px] text-ink-muted transition-colors hover:text-ink"
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

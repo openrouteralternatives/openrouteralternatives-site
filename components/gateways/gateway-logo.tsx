@@ -4,17 +4,27 @@ import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const SIZES = {
-  sm: { box: "size-7 text-[10px] rounded-md", px: 28 },
-  md: { box: "size-9 text-[11.5px] rounded-lg", px: 36 },
-  lg: { box: "size-14 text-base rounded-xl", px: 56 },
+  sm: { box: "size-7 rounded-md text-[10px]", px: 28, pad: "p-1" },
+  md: { box: "size-9 rounded-lg text-[11.5px]", px: 36, pad: "p-1.5" },
+  lg: { box: "size-14 rounded-xl text-base", px: 56, pad: "p-2" },
 } as const;
+
+export type GatewayLogoSize = keyof typeof SIZES;
 
 /**
  * Brand mark for a gateway.
  *
- * Logos are only rendered when a locally stored asset exists in
- * `/public/logos`. Otherwise a stable monogram is drawn, so no entry depends on
- * hotlinking a third party's image.
+ * A record with a `logo` path renders that locally stored asset from
+ * `/public/logos`; every other record renders a stable monogram. Both variants
+ * occupy an identical, fixed-size box so a table row or card never shifts when
+ * an image loads, and no entry depends on hotlinking a third party's image.
+ *
+ * Presence of the file is checked by `npm run audit`, which is why there is no
+ * runtime error handler here: a missing asset fails the audit rather than
+ * rendering a broken image.
+ *
+ * Marks are rendered small and inside a quiet border so they aid recognition
+ * without competing with the data around them.
  */
 export function GatewayLogo({
   gateway,
@@ -22,20 +32,32 @@ export function GatewayLogo({
   className,
 }: {
   gateway: Gateway;
-  size?: keyof typeof SIZES;
+  size?: GatewayLogoSize;
   className?: string;
 }) {
   const spec = SIZES[size];
 
   if (gateway.logo) {
     return (
-      <Image
-        src={gateway.logo}
-        alt=""
-        width={spec.px}
-        height={spec.px}
-        className={cn("shrink-0 border border-line bg-surface object-contain", spec.box, className)}
-      />
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center overflow-hidden border border-line bg-white",
+          spec.box,
+          spec.pad,
+          className,
+        )}
+      >
+        <Image
+          src={gateway.logo}
+          alt={`${gateway.name} logo`}
+          width={spec.px}
+          height={spec.px}
+          // Icons are tiny static files; skipping the optimizer keeps SVG
+          // sources working and avoids a runtime image route for 30 marks.
+          unoptimized
+          className="size-full object-contain"
+        />
+      </span>
     );
   }
 

@@ -58,6 +58,9 @@ export function createGateway(input: GatewayInput): Gateway {
     routes: noMetric("No route count is published for this gateway."),
     endpoints: noMetric("No endpoint count is published for this gateway."),
     modalities: unverified(),
+    openaiCompatible: unverified(
+      "OpenAI API compatibility has not been read from the vendor's documentation for this dataset revision.",
+    ),
     gatewayLocations: unverified(),
     inferenceLocations: unverified(),
     euResidency: unverified(),

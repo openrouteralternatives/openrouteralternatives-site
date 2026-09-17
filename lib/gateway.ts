@@ -7,8 +7,15 @@ import type {
   Modality,
   Source,
 } from "@/types";
-import type { MetricValue } from "@/types/metric";
-import { allObservations, comparableValue, latestMeasured } from "@/lib/metric";
+import type { Metric, MetricValue } from "@/types/metric";
+import {
+  allObservations,
+  comparableValue,
+  isQuantified,
+  latestMeasured,
+  metricDisplay,
+} from "@/lib/metric";
+import { QUANTIFIED_STATUSES } from "@/types/metric";
 import { gateways } from "@/data/gateways";
 
 /**
@@ -51,6 +58,78 @@ export function measuredModelCount(gateway: Gateway): number | null {
  */
 export function displayModelObservation(gateway: Gateway): MetricValue {
   return latestMeasured(gateway.models) ?? gateway.models.current;
+}
+
+/**
+ * The model figure the table sorts on.
+ *
+ * Follows what the cell displays: the current observation when it carries a
+ * comparable number, otherwise the newest measurement, otherwise any other
+ * quantified figure on record. Rows with no number return undefined so the
+ * table pins them to the bottom in both sort directions.
+ */
+export function sortableModelCount(gateway: Gateway): number | undefined {
+  const current = gateway.models.current;
+  if (isQuantified(current)) return current.value;
+  return (
+    latestMeasured(gateway.models)?.value ??
+    comparableValue(gateway.models, ["official", "catalogue", "secondary"])?.value ??
+    undefined
+  );
+}
+
+/**
+ * The provider figure the table sorts on: the displayed (current) figure when
+ * it carries a number, otherwise the strongest other figure on record.
+ */
+export function sortableProviderCount(gateway: Gateway): number | undefined {
+  const current = gateway.providers.current;
+  if (isQuantified(current)) return current.value;
+  return comparableValue(gateway.providers, [...QUANTIFIED_STATUSES])?.value ?? undefined;
+}
+
+export type CoverageKind = "routes" | "endpoints";
+
+export interface CoverageMetric {
+  metric: Metric;
+  kind: CoverageKind;
+}
+
+/**
+ * Routes and endpoints share one comparison column.
+ *
+ * They remain two fields in the record, because a route (one model served by
+ * one provider) and an endpoint (an addressable API entry as the vendor
+ * publishes it) are different quantities. The column shows whichever of the
+ * two carries a figure — routes first, since that is the more common
+ * definition — and labels it, so a reader always knows which one they are
+ * looking at. Where neither carries a figure, the more specific status wins.
+ */
+export function routesOrEndpoints(gateway: Gateway): CoverageMetric {
+  const { routes, endpoints } = gateway;
+  if (metricDisplay(routes.current)) return { metric: routes, kind: "routes" };
+  if (metricDisplay(endpoints.current)) return { metric: endpoints, kind: "endpoints" };
+  if (routes.current.status === "not_published" && endpoints.current.status !== "not_published") {
+    return { metric: endpoints, kind: "endpoints" };
+  }
+  return { metric: routes, kind: "routes" };
+}
+
+/** The other half of the pair, where it also carries a figure. */
+export function secondaryCoverage(gateway: Gateway): CoverageMetric | null {
+  const primary = routesOrEndpoints(gateway);
+  const other: CoverageMetric =
+    primary.kind === "routes"
+      ? { metric: gateway.endpoints, kind: "endpoints" }
+      : { metric: gateway.routes, kind: "routes" };
+  return metricDisplay(other.metric.current) ? other : null;
+}
+
+/** Sort key for the combined routes / endpoints column. */
+export function sortableCoverage(gateway: Gateway): number | undefined {
+  const { metric } = routesOrEndpoints(gateway);
+  if (isQuantified(metric.current)) return metric.current.value;
+  return comparableValue(metric, [...QUANTIFIED_STATUSES])?.value ?? undefined;
 }
 
 /** The newest date on which any model count was measured across the dataset. */
