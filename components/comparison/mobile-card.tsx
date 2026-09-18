@@ -8,6 +8,7 @@ import {
   DeploymentCell,
   JurisdictionCell,
   ModalityCell,
+  ObservabilityCell,
   OpenAiCompatibilityCell,
   ProvidersCell,
   ResidencyCell,
@@ -89,6 +90,12 @@ export function MobileGatewayCard({ gateway }: { gateway: Gateway }) {
             OpenAI compatible
           </p>
           <OpenAiCompatibilityCell field={gateway.openaiCompatible} size="sm" />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-ink-subtle">
+            Observability
+          </p>
+          <ObservabilityCell field={gateway.observability} size="sm" />
         </div>
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-ink-subtle">

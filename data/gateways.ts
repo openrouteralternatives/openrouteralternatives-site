@@ -1,4 +1,12 @@
-import type { Capability, EmployeeBand, EuResidency, Gateway } from "@/types";
+import type {
+  Capability,
+  DataStatus,
+  EmployeeBand,
+  EuResidency,
+  Funding,
+  Gateway,
+  ObservabilityLevel,
+} from "@/types";
 import type { Source } from "@/types/source";
 import type { MetricValue } from "@/types/metric";
 import { field, notApplicable, notPublishedField, unverified } from "@/types/field";
@@ -52,6 +60,13 @@ import {
  *     figure is `current` and earlier measurements stay on record in
  *     `history`; where it publishes none, this project's own dated measurement
  *     remains current. Nothing is overwritten.
+ *  9. `funding` and `observability` come from the September 18, 2026 funding
+ *     and observability research pass. Funding describes the operating
+ *     company, never the product alone; a corporate product or community
+ *     project records `not-applicable`, and funding that could not be publicly
+ *     verified records `not-published` rather than zero. Observability levels
+ *     are read from vendor documentation against the five-step scale in the
+ *     methodology and are never inferred from the product category.
  *
  * `qualifier: "at-least"` marks a vendor floor such as "50+". The number still
  * sorts normally; the UI renders the plus sign so a floor is never shown as an
@@ -66,6 +81,9 @@ export const MEASUREMENT_DATE = "2026-09-15";
 
 /** Date this dataset revision was assembled: the verified research pass. */
 export const DATASET_DATE = "2026-09-17";
+
+/** Date the funding and observability research pass was applied. */
+export const FUNDING_OBSERVABILITY_DATE = "2026-09-18";
 
 const baselineSource = (): Source => ({
   id: "baseline",
@@ -82,6 +100,27 @@ const researchSource = (): Source => ({
   label: "Sep 17, 2026 verified research",
   url: null,
   retrieved: DATASET_DATE,
+});
+
+/**
+ * Funding and observability citations name where each fact was read in the
+ * label and carry no link, following the registry convention: announcement
+ * and database URLs change too often to construct without checking each one.
+ */
+const fundingSource = (reference: string): Source => ({
+  id: "funding",
+  kind: "project-baseline",
+  label: `Funding research — ${reference}`,
+  url: null,
+  retrieved: FUNDING_OBSERVABILITY_DATE,
+});
+
+const observabilitySource = (reference = "vendor public material"): Source => ({
+  id: "observability",
+  kind: "project-baseline",
+  label: `Observability research — ${reference}`,
+  url: null,
+  retrieved: FUNDING_OBSERVABILITY_DATE,
 });
 
 const modelsEndpointSource = (
@@ -237,6 +276,50 @@ const notStated = (what: string) =>
     asOf: DATASET_DATE,
   });
 
+/**
+ * Disclosed financing of the operating company, from the funding research pass.
+ *
+ * `rounds` counts disclosed financing rounds only. Grants, strategic
+ * investments outside a disclosed round and acquisitions are described in the
+ * note and never counted. Where credible databases disagree on the count, the
+ * status is `conflicting` and the note preserves both figures.
+ */
+const funding = (
+  rounds: number,
+  investors: string[],
+  extra: { note?: string; totalRaised?: string; status?: DataStatus } = {},
+) =>
+  field<Funding>(
+    { rounds, investors, ...(extra.totalRaised ? { totalRaised: extra.totalRaised } : {}) },
+    extra.status ?? "verified",
+    {
+      ...(extra.note ? { note: extra.note } : {}),
+      sources: ["funding"],
+      asOf: FUNDING_OBSERVABILITY_DATE,
+    },
+  );
+
+/** No credible public record of a financing round was found. Never written as zero. */
+const fundingNotPublished = (
+  note = "No financing announcement or credible public record of a funding round was found. No round count is recorded rather than a guess.",
+) => notPublishedField<Funding>(note);
+
+/**
+ * Built-in observability against the five-step scale, read from the vendor's
+ * documentation. `estimated` marks a level supported only by the absence of
+ * richer public material rather than by a documented feature set.
+ */
+const observability = (
+  level: ObservabilityLevel,
+  note: string,
+  status: "vendor-stated" | "estimated" = "vendor-stated",
+) =>
+  field<ObservabilityLevel>(level, status, {
+    note,
+    sources: ["observability"],
+    asOf: FUNDING_OBSERVABILITY_DATE,
+  });
+
 /** No residency claim found in the vendor's public material. */
 const residencyNotStated = () =>
   field<EuResidency>("not-stated", "verified", {
@@ -331,14 +414,10 @@ export const gateways: Gateway[] = [
         note: "Official catalogue count across every modality on September 17, 2026. The marketing site states 500+ models. Not an LLM-only figure, so it is never ranked against the measured LLM catalogues.",
       }),
       [
-        measured(360, MEASUREMENT_DATE, {
+        measured(638, MEASUREMENT_DATE, {
           scope: "llm",
           sourceIds: ["models-endpoint"],
           note: `${COUNT_RULE} Counted from the public LLM catalogue, which is the only Eden AI catalogue exposed as an enumerable endpoint; its OCR, speech, image, video and document models are not individually listed there.`,
-        }),
-        measured(1038, BASELINE_DATE, {
-          sourceIds: ["baseline"],
-          note: "Project baseline figure covering the platform as a whole rather than the LLM catalogue alone. Preserved as a historical observation; not comparable with the LLM-scoped measurements.",
         }),
         official("500+", DATASET_DATE, {
           sourceIds: ["site"],
@@ -347,7 +426,7 @@ export const gateways: Gateway[] = [
       ],
     ),
     providers: metric(
-      official("50+", DATASET_DATE, {
+      official("60+", DATASET_DATE, {
         sourceIds: ["site", "research"],
         note: "Officially stated floor. Between 33 and 68 providers are reached depending on which feature scopes are counted.",
       }),
@@ -419,6 +498,24 @@ export const gateways: Gateway[] = [
       sources: ["providers-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
+    funding: funding(
+      2,
+      [
+        "Galion.exe",
+        "50 Partners",
+        "Olivier Pomel",
+        "Sébastien Pahl",
+        "Alix de Sagazan",
+      ],
+      {
+        totalRaised: "$4.5M",
+        note: "A €1.5M round in 2022 followed by a €3M seed round led by Galion.exe, with further angel investors beyond those named. The company's own site states $4.5M raised in total.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Real-time monitoring of latency, errors and throughput, usage reports with graphs and charts, error tracking and log management, and centralised monitoring of costs, performance and the integrated AI services.",
+    ),
     strengths: [
       "Broadest documented modality coverage in this dataset: eleven modalities including OCR, speech, translation, video and document processing alongside text.",
       "EU-incorporated with EU processing by default through a dedicated EU endpoint, zero data retention, SOC 2 and ISO/IEC 27001 stated.",
@@ -447,6 +544,8 @@ export const gateways: Gateway[] = [
       pricingSource("https://www.edenai.co/pricing"),
       linkedinSource("https://www.linkedin.com/company/edenai/"),
       xSource("edenaico"),
+      fundingSource("edenai.co"),
+      observabilitySource("help.edenai.co"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -558,6 +657,22 @@ export const gateways: Gateway[] = [
       sources: ["models-endpoint", "research"],
       asOf: DATASET_DATE,
     }),
+    funding: funding(
+      1,
+      [
+        "20VC (The Twenty Minute VC)",
+        "Tapestry VC",
+        "Insiders Ventures",
+        "Tiny Supercomputer Investment Company",
+      ],
+      {
+        note: "A $3M seed round announced in September 2025.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Request-level token, cost and latency data, spend over time, breakdowns by model, team, user, key and origin, metadata filters, P50 to P99 latency percentiles, sessions, tool calls, budgets, alerts and audit logs.",
+    ),
     strengths: [
       "Unusually transparent catalogue: models, endpoints and providers are published as three separate figures (211, 684 and 32), which almost no other entry here does.",
       "A named EU gateway on AWS in France and a published subprocessor list, alongside ISO/IEC 27001 and SOC 2 Type II.",
@@ -581,6 +696,8 @@ export const gateways: Gateway[] = [
       legalSource(),
       linkedinSource("https://www.linkedin.com/company/requesty-ai/"),
       xSource("RequestyAI"),
+      fundingSource("requesty.ai announcement"),
+      observabilitySource("requesty.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -665,6 +782,26 @@ export const gateways: Gateway[] = [
       asOf: DATASET_DATE,
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      3,
+      [
+        "seed + speed Ventures",
+        "Galion.exe",
+        "XO Ventures",
+        "xdeck ventures",
+        "Curiosity VC",
+        "Spacetime",
+        "Waves Capital",
+        "GoldenEggCheck",
+      ],
+      {
+        note: "An €800K pre-seed, a €1.5M extension and a €5M seed round: three financing events.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Every routed request becomes a trace carrying cost, tokens, latency and the full payload; OpenTelemetry export, runtime budgets and spend limits, spans for requests, agent steps, evaluators and guardrails, and data export.",
+    ),
     strengths: [
       "EU-incorporated with a registry-confirmed operating entity, EU-region hosting by default and sovereign hosting options.",
       "Hosted, VPC, on-premise and air-gapped deployment documented, with SOC 2 Type II and ISO/IEC 27001 stated.",
@@ -687,6 +824,8 @@ export const gateways: Gateway[] = [
       registrySource("KVK 88882179"),
       linkedinSource("https://www.linkedin.com/company/orqai/"),
       xSource("orq_ai"),
+      fundingSource("orq.ai announcements"),
+      observabilitySource("orq.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -787,6 +926,18 @@ export const gateways: Gateway[] = [
       asOf: DATASET_DATE,
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      0,
+      ["AI-on-Demand / European ecosystem programmes"],
+      {
+        note: "Crunchbase records one grant-backed round from AI-on-Demand and European ecosystem programmes. A grant is not counted as a financing round, and no venture round has been disclosed.",
+      },
+    ),
+    observability: observability(
+      "limited",
+      "The platform provides operational inference infrastructure, but its public material does not establish a request-level observability interface rich enough to record a higher level.",
+      "estimated",
+    ),
     strengths: [
       "The strongest EU-only posture in this dataset: EU incorporation, EU gateway and exclusively EU-established upstream providers, rather than an EU option layered onto a global network.",
       "Catalogue is publicly enumerable, so its 107-model LLM count on September 15, 2026 is a measurement rather than a claim, and its 196 routes were counted the same way.",
@@ -806,6 +957,8 @@ export const gateways: Gateway[] = [
       siteSource("https://cortecs.ai"),
       registrySource("Austrian company register — Cortecs GmbH"),
       linkedinSource("https://www.linkedin.com/company/cortecs-ai/"),
+      fundingSource("Crunchbase"),
+      observabilitySource(),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -874,6 +1027,13 @@ export const gateways: Gateway[] = [
     }),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: fundingNotPublished(
+      "No disclosed venture round was found. No round count is recorded rather than a guess.",
+    ),
+    observability: observability(
+      "limited",
+      "The dashboard shows usage by model and over time, the cost of individual requests and usage limits. Useful cost monitoring rather than a tracing or observability suite.",
+    ),
     strengths: [
       "EU-only architecture is the product's design premise rather than a configuration option.",
       "Registry-confirmed Dutch operating entity, with the KVK number printed on its own site.",
@@ -891,6 +1051,7 @@ export const gateways: Gateway[] = [
       siteSource("https://www.eurouter.ai"),
       registrySource("KVK 42054357"),
       linkedinSource("https://www.linkedin.com/company/eurouter/"),
+      observabilitySource("eurouter.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -976,6 +1137,17 @@ export const gateways: Gateway[] = [
     certifications: noCertifications(),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      1,
+      ["Luminar Ventures", "Emblem VC", "Greens Capital"],
+      {
+        note: "A pre-seed round in 2025 with angel investors. Databases differ on the amount but agree on a single round.",
+      },
+    ),
+    observability: observability(
+      "detailed",
+      "Tracing with spans, prompts, responses and custom metrics, spend controls, metadata and configurable retention; the fuller feature set sits on the Control Plane and Enterprise tiers.",
+    ),
     strengths: [
       "EU-hosted by default on named infrastructure — AWS Stockholm — rather than an unspecified EU region.",
       "Largest vendor-stated catalogue among the EU-incorporated gateways here at 700+ models, with 44 providers listed in its directory.",
@@ -994,6 +1166,8 @@ export const gateways: Gateway[] = [
       registrySource("Bolagsverket — Opper Technology AB"),
       linkedinSource("https://www.linkedin.com/company/opper-ai"),
       xSource("opperai"),
+      fundingSource("opper.ai announcement"),
+      observabilitySource("opper.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1077,6 +1251,24 @@ export const gateways: Gateway[] = [
       asOf: DATASET_DATE,
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      2,
+      [
+        "Index Ventures",
+        "Evantic Capital",
+        "Creandum",
+        "Dig Ventures",
+        "Flat Capital",
+      ],
+      {
+        totalRaised: "$43M+",
+        note: "An $8M initial round and a $30M Series A; the company states more than $43M raised combined. Angel investors include the chief executives of Datadog, Klarna, Supercell and Wix.",
+      },
+    ),
+    observability: observability(
+      "detailed",
+      "An AI usage tracker covering requests, tokens, models and API keys by team, project and user, with latency, errors and throughput, cost breakdowns and audit logs.",
+    ),
     strengths: [
       "Largest company scale of any EU-incorporated entry here, at 51–200 employees.",
       "Broadest certification set in the EU-incorporated group, and the only entry stating ISO/IEC 42001.",
@@ -1097,6 +1289,8 @@ export const gateways: Gateway[] = [
       registrySource("Lithuanian register of legal entities — Spectra Tech, UAB"),
       linkedinSource("https://www.linkedin.com/company/nexos-ai/"),
       xSource("nexos_ai"),
+      fundingSource("nexos.ai announcements"),
+      observabilitySource("nexos.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1183,6 +1377,17 @@ export const gateways: Gateway[] = [
     pricingTransparency: field("public-with-enterprise", "verified", {
       sources: ["site", "research"],
     }),
+    funding: funding(
+      1,
+      ["Serena", "VentureFriends"],
+      {
+        note: "A 2.9M pre-seed round announced in 2024, reported in both euros and dollars.",
+      },
+    ),
+    observability: observability(
+      "detailed",
+      "Latency, tokens, errors and cost per request, usage attributed to people, repositories and pull requests, and log export to OTLP, S3, ClickHouse, BigQuery and Snowflake.",
+    ),
     strengths: [
       "One of the few entries offering air-gapped on-premise deployment, which removes the vendor from the request path entirely.",
       "Publishes models and routes as separate figures — 223 models across 972 provider routes — rather than conflating them.",
@@ -1201,6 +1406,8 @@ export const gateways: Gateway[] = [
       docsSource("https://www.edgee.ai/routing"),
       linkedinSource("https://www.linkedin.com/company/edgee-ai/"),
       xSource("edgee_ai"),
+      fundingSource("edgee.ai announcement"),
+      observabilitySource("edgee.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1292,6 +1499,12 @@ export const gateways: Gateway[] = [
     euResidency: residencyNotStated(),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: fundingNotPublished(),
+    observability: observability(
+      "basic",
+      "Usage and billing information is available. Public documentation does not establish request-level analytics beyond that.",
+      "estimated",
+    ),
     strengths: [
       "790 distinct models measured across every endpoint type on September 15, 2026 — the largest measured catalogue here once image, video, speech and embedding models are included.",
       "369 of those are LLM models, the second-largest measured LLM catalogue in this dataset.",
@@ -1313,6 +1526,7 @@ export const gateways: Gateway[] = [
       legalSource(),
       linkedinSource("https://www.linkedin.com/company/aimlapi/"),
       xSource("aimlapi"),
+      observabilitySource(),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1322,7 +1536,7 @@ export const gateways: Gateway[] = [
     slug: "llmgateway",
     name: "llmgateway.io",
     website: "https://llmgateway.io",
-    logo: "/logos/llmgateway.png",
+    logo: "/logos/llmgateway.svg",
     summary: "An LLM gateway routing requests across multiple upstream model providers.",
     differentiator:
       "Publicly enumerable multi-provider LLM gateway with transparent model/provider catalogue.",
@@ -1400,6 +1614,17 @@ export const gateways: Gateway[] = [
       asOf: DATASET_DATE,
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      0,
+      [],
+      {
+        note: "Public company information states that the company has never raised external funding.",
+      },
+    ),
+    observability: observability(
+      "detailed",
+      "The dashboard shows requests, tokens, spend and average cost with provider and model breakdowns, error and reliability trends and project-level usage; the API exposes usage grouped by member, model, provider, project and key, and the enterprise tier adds audit logs.",
+    ),
     strengths: [
       "Transparent catalogue: the provider page lists 493 models across 46 providers, and the public endpoint let this project measure 269 models, 52 providers and 571 routes on September 15, 2026.",
       "Publishes per-model provider routes, so route counts can be measured rather than estimated.",
@@ -1419,6 +1644,8 @@ export const gateways: Gateway[] = [
       registrySource("Delaware Division of Corporations — Polar Lights LLC"),
       linkedinSource("https://www.linkedin.com/company/llmgateway/"),
       xSource("llmgateway"),
+      fundingSource("prospeo.io company profile"),
+      observabilitySource("llmgateway.io"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1500,6 +1727,13 @@ export const gateways: Gateway[] = [
       sources: ["models-endpoint"],
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: fundingNotPublished(
+      "Dealroom records no known external funding and the company publishes no financing information. No round count is recorded, because absence from a database is not evidence of zero rounds.",
+    ),
+    observability: observability(
+      "detailed",
+      "Request logs filterable by request, trace, session and model, with live tail, time to first token, duration and status, plus usage dashboards showing requests, input, cache and output tokens and cost by model and key.",
+    ),
     strengths: [
       "117 text models measured from its public endpoint on September 15, 2026, with a 200+ headline across text, image, video and audio.",
       "Serves open-weight models directly rather than only brokering other providers' APIs, with SOC 2 and zero data retention stated.",
@@ -1516,6 +1750,7 @@ export const gateways: Gateway[] = [
       siteSource("https://novita.ai"),
       linkedinSource("https://www.linkedin.com/company/novita-labs/"),
       xSource("novita_labs"),
+      observabilitySource("novita.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1610,6 +1845,25 @@ export const gateways: Gateway[] = [
       sources: ["site", "research"],
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      2,
+      [
+        "Intel Capital",
+        "Peak XV / Surge",
+        "Eniac Ventures",
+        "Jump Capital",
+        "Gokul Rajaram",
+        "Mohit Aron",
+        "Cyan Banister",
+      ],
+      {
+        note: "A $2.3M seed and a $19M Series A, with further angel investors beyond those named.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Request-level logs with full prompt and response inspection, tokens and cost, latency percentiles, time to first token and inter-token latency, breakdowns by model, team, user, customer, environment and custom metadata, agent traces, APIs, alerts and exports.",
+    ),
     strengths: [
       "Deploys inside the customer's own cloud account or data centre, which changes where requests are processed regardless of vendor region lists.",
       "1,000+ LLMs across 15+ platforms documented, plus self-hosted models, across six documented modalities.",
@@ -1628,6 +1882,8 @@ export const gateways: Gateway[] = [
       docsSource("https://www.truefoundry.com/docs/ai-gateway/supported-providers"),
       linkedinSource("https://www.linkedin.com/company/truefoundry/"),
       xSource("truefoundry"),
+      fundingSource("truefoundry.com announcements"),
+      observabilitySource("truefoundry.com"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1729,6 +1985,17 @@ export const gateways: Gateway[] = [
     pricingTransparency: field("public-with-enterprise", "verified", {
       sources: ["site", "research"],
     }),
+    funding: funding(
+      2,
+      ["Lightspeed", "Elevation Capital"],
+      {
+        note: "A $3M seed in 2023 and a $15M Series A in February 2026, with angel investors. The May 2026 acquisition by Palo Alto Networks is not a financing round and is recorded under ownership.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Request and response logs with more than forty recorded details, cost, performance, tokens including thinking tokens, multimodal data, tracing, feedback, FinOps views and historical logs.",
+    ),
     strengths: [
       "The routing component is Apache-2.0, so it can be inspected and run hosted, self-hosted, in a VPC or on-premise.",
       "72 documented providers and 313 published endpoint combinations, with SOC 2 Type II and ISO/IEC 27001 listed for enterprise compliance.",
@@ -1748,6 +2015,8 @@ export const gateways: Gateway[] = [
       repoSource("https://github.com/Portkey-AI/gateway"),
       linkedinSource("https://www.linkedin.com/company/portkey-ai/"),
       xSource("PortkeyAI"),
+      fundingSource("YourStory"),
+      observabilitySource("portkey.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1828,6 +2097,18 @@ export const gateways: Gateway[] = [
     pricingTransparency: field("public-with-enterprise", "verified", {
       sources: ["site", "research"],
     }),
+    funding: funding(
+      2,
+      ["Y Combinator", "CoughDrop Capital", "Realm Capital Ventures"],
+      {
+        status: "conflicting",
+        note: "Funding databases disagree: StartupIntros records two rounds totalling about $2.2M, while Crunchbase exposes one. The 2026 acquisition by Mintlify is not a financing round and is recorded under ownership.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Real-time request logging, tracing and debugging, unified provider insights, user metrics, alerts and cost and performance visibility, self-hostable. Observability is the core of the product alongside the gateway.",
+    ),
     strengths: [
       "Codebase is public, so logging and routing behaviour can be audited directly, and it can be self-hosted.",
       "20+ documented gateway providers with automatic failover, and SOC 2 stated.",
@@ -1848,6 +2129,8 @@ export const gateways: Gateway[] = [
       repoSource("https://github.com/Helicone/helicone"),
       linkedinSource("https://www.linkedin.com/company/helicone/"),
       xSource("helicone_ai"),
+      fundingSource("StartupIntros and Crunchbase"),
+      observabilitySource("helicone.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -1930,6 +2213,27 @@ export const gateways: Gateway[] = [
       sources: ["site", "research"],
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      4,
+      [
+        "Andreessen Horowitz (a16z)",
+        "ICONIQ",
+        "Greylock",
+        "Elad Gil",
+        "Basecase Capital",
+        "SV Angel",
+        "BoxGroup",
+        "Datadog",
+        "Databricks Ventures",
+      ],
+      {
+        note: "An initial round, a $5.1M seed, a $36M Series A and an $80M Series B, with numerous angel investors beyond those named. The company stated $45M raised after the Series A before announcing the Series B.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Full traces with nested spans for LLM, tool and retrieval calls, token, cost and latency data, dashboards and custom views, live scoring, alerts and evaluation integration.",
+    ),
     strengths: [
       "Routing is coupled to evaluation, so model changes can be measured against test sets rather than chosen by catalogue size.",
       "An EU data-plane option and customer-controlled VPC/BYOC deployment, with SOC 2 stated, from a 51–200 person company with a confirmed operating entity.",
@@ -1946,6 +2250,8 @@ export const gateways: Gateway[] = [
       docsSource("https://www.braintrust.dev/docs"),
       linkedinSource("https://www.linkedin.com/company/braintrustdata/"),
       xSource("braintrust"),
+      fundingSource("braintrust.dev announcements"),
+      observabilitySource("braintrust.dev"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2017,6 +2323,24 @@ export const gateways: Gateway[] = [
       sources: ["site", "research"],
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      2,
+      [
+        "Gradient Ventures",
+        "Y Combinator",
+        "Hat-Trick Capital",
+        "XIAOXIAO FUND",
+        "Antigravity Capital",
+        "Alpen Capital",
+      ],
+      {
+        note: "A convertible note in 2024 followed by a $5M seed round in March 2026, with angel investors.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "A dashboard for requests, errors, cost, latency and tokens with breakdowns by model, user and API key, traces for LLM, tool and agent steps, saved views, threshold monitors and alerts.",
+    ),
     strengths: [
       "Monitoring and gateway functions in one product, with 1,000+ models and 34+ documented providers stated.",
       "Retention is customer controlled.",
@@ -2033,6 +2357,8 @@ export const gateways: Gateway[] = [
       docsSource("https://docs.respan.ai"),
       linkedinSource("https://www.linkedin.com/company/respan-ai/"),
       xSource("RespanAI"),
+      fundingSource("respan.ai announcement"),
+      observabilitySource("respan.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2105,6 +2431,24 @@ export const gateways: Gateway[] = [
       sources: ["site", "research"],
     }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      1,
+      [
+        "NEA",
+        "Prosus Ventures",
+        "Carya Venture Partners",
+        "General Catalyst",
+        "Accenture Ventures",
+      ],
+      {
+        note: "A $9M seed round in November 2023. Accenture Ventures made a strategic investment in 2024 that was not disclosed as a separate financing round, so it is not counted.",
+      },
+    ),
+    observability: observability(
+      "limited",
+      "Routing, performance and cost optimisation are documented, but no general-purpose request observability suite comparable to the dedicated observability platforms was found in the public material.",
+      "estimated",
+    ),
     strengths: [
       "Per-request model routing with automatic model selection and cost/quality trade-offs rather than a fixed model choice.",
       "292 models across 47 providers in the official catalogue, with hosted and VPC deployment documented.",
@@ -2120,6 +2464,8 @@ export const gateways: Gateway[] = [
       siteSource("https://withmartian.com"),
       linkedinSource("https://www.linkedin.com/company/martian-ai/"),
       xSource("withmartian"),
+      fundingSource("Accenture newsroom"),
+      observabilitySource(),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2188,6 +2534,28 @@ export const gateways: Gateway[] = [
     euResidency: residencyNotStated(),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: funding(
+      2,
+      [
+        "Defy Partners",
+        "Inovia Capital",
+        "640 Oxford",
+        "VitalStage Ventures",
+        "Karman VC",
+        "Jeff Dean",
+        "Ion Stoica",
+        "Julien Chaumond",
+        "Zack Kass",
+      ],
+      {
+        note: "The company announced a $2.3M pre-seed round; databases record two financing events. Angel investors include Jeff Dean, Ion Stoica, Julien Chaumond and Zack Kass among others.",
+      },
+    ),
+    observability: observability(
+      "basic",
+      "The routing platform documents performance and model-routing functionality, but the public material does not establish a built-in observability analytics layer.",
+      "estimated",
+    ),
     strengths: [
       "SOC 2 and ISO/IEC 27001 stated, with zero-data-retention positioning, at an 11–50 person scale.",
       "Routing tuned for coding agents and prompt-level model selection rather than general chat.",
@@ -2203,6 +2571,8 @@ export const gateways: Gateway[] = [
       siteSource("https://www.notdiamond.ai"),
       linkedinSource("https://www.linkedin.com/company/notdiamond/"),
       xSource("notdiamond_ai"),
+      fundingSource("notdiamond.ai announcement"),
+      observabilitySource(),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2294,6 +2664,17 @@ export const gateways: Gateway[] = [
     pricingTransparency: field("public-with-enterprise", "verified", {
       sources: ["site", "research"],
     }),
+    funding: funding(
+      1,
+      ["Elevation Capital"],
+      {
+        note: "A $3M seed round in June 2024 for Maxim AI (H3 Labs Inc.), with undisclosed angel investors. Bifrost is Maxim's gateway component; financing attributed to unrelated companies named Bifrost is not recorded here.",
+      },
+    ),
+    observability: observability(
+      "advanced",
+      "Logs and traces with advanced log filtering, dataset creation from logs, online evaluation, live dashboards and configurable retention.",
+    ),
     strengths: [
       "Gateway component is Apache-2.0 and can run self-hosted, in a VPC or air-gapped, which removes the vendor from the request path.",
       "SOC 2 Type II and ISO/IEC 27001 stated, alongside agent evaluation tooling, from a 51–200 person company.",
@@ -2311,6 +2692,8 @@ export const gateways: Gateway[] = [
       repoSource("https://github.com/maximhq/bifrost"),
       linkedinSource("https://www.linkedin.com/company/maxim-ai/"),
       xSource("getmaximai"),
+      fundingSource("CB Insights"),
+      observabilitySource("getmaxim.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2384,6 +2767,13 @@ export const gateways: Gateway[] = [
     euResidency: residencyNotStated(),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: fundingNotPublished(
+      "No financing disclosure was found for the atlascloud.ai company. Unrelated companies also named Atlas Cloud are not consulted.",
+    ),
+    observability: observability(
+      "limited",
+      "Daily model usage and daily model cost APIs, balance and usage tracking and a cost breakdown. Good billing and usage visibility; no request traces or feature-level observability were found.",
+    ),
     strengths: [
       "Covers language, image, video and audio in one platform, with 400+ models stated across 16 listed providers.",
       "Explicit about not holding security certifications, which is more useful to a buyer than silence.",
@@ -2400,6 +2790,7 @@ export const gateways: Gateway[] = [
       legalSource(),
       linkedinSource("https://www.linkedin.com/company/atlas-cloudai/"),
       xSource("atlas_cloud_ai"),
+      observabilitySource("atlascloud.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2466,6 +2857,11 @@ export const gateways: Gateway[] = [
     ),
     pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
     openSource: field("no", "verified", { sources: ["site"] }),
+    funding: fundingNotPublished(),
+    observability: observability(
+      "limited",
+      "The dashboard provides usage insights and cost controls. Public material does not establish traces or dimensional analytics of the depth found on the dedicated observability platforms.",
+    ),
     strengths: [
       "Routes on price, latency and throughput with fallback, rather than a fixed provider order.",
       "OpenAI-compatible surface with bring-your-own-key support and public pricing.",
@@ -2483,6 +2879,7 @@ export const gateways: Gateway[] = [
       legalSource(),
       linkedinSource("https://www.linkedin.com/company/anannas-ai/"),
       xSource("anannas_ai"),
+      observabilitySource("anannas.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2530,12 +2927,22 @@ export const gateways: Gateway[] = [
     certifications: noCertifications(),
     euResidency: residencyNotStated(),
     pricingTransparency: unverified("Pricing disclosure was not verified."),
+    funding: fundingNotPublished(),
+    observability: observability(
+      "limited",
+      "Usage logs and task logs with request identifiers, consumption, cost, failure reasons, requests and tokens per minute, and date and request filtering. Useful auditing with less evidence of multi-dimensional analytics.",
+    ),
     strengths: [],
     limitations: [
       "Nothing beyond the vendor's own site has been established from a primary source. It is listed so the dataset does not silently drop a candidate, not because it can be compared yet.",
     ],
     bestFor: [],
-    sources: [researchSource(), baselineSource(), siteSource("https://www.routescope.ai")],
+    sources: [
+      researchSource(),
+      baselineSource(),
+      siteSource("https://www.routescope.ai"),
+      observabilitySource("doc.routescope.ai"),
+    ],
     lastVerified: DATASET_DATE,
   }),
 
@@ -2619,6 +3026,11 @@ export const gateways: Gateway[] = [
       note: "The proxy is free to run; hosted and enterprise tiers are priced publicly with enterprise terms quoted separately.",
       sources: ["site", "research"],
     }),
+    funding: fundingNotPublished(),
+    observability: observability(
+      "detailed",
+      "An admin dashboard with spend tracking by project and person, cost tracking, logging hooks and extensive observability integrations. Strongest in self-hosted setups, where some analytics depend on configuration or integrations.",
+    ),
     strengths: [
       "Source is public and MIT licensed, so behaviour can be audited and modified, and 140+ provider integrations are documented.",
       "Residency follows the deployment, not a vendor's region list.",
@@ -2636,6 +3048,7 @@ export const gateways: Gateway[] = [
       docsSource("https://docs.litellm.ai"),
       linkedinSource("https://www.linkedin.com/company/litellm/"),
       xSource("LiteLLM"),
+      observabilitySource("docs.litellm.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2720,6 +3133,28 @@ export const gateways: Gateway[] = [
     pricingTransparency: field("public-with-enterprise", "verified", {
       sources: ["site", "research"],
     }),
+    funding: funding(
+      8,
+      [
+        "Tiger Global",
+        "Balderton Capital",
+        "Andreessen Horowitz (a16z)",
+        "Index Ventures",
+        "CRV",
+        "Goldman Sachs",
+        "Sapphire Ventures",
+        "Notable Capital",
+        "Ontario Teachers' Pension Plan",
+      ],
+      {
+        totalRaised: "$345M+",
+        note: "Financing of Kong Inc., the company behind the gateway, across eight rounds and about $345M, with further investors beyond those named. None of it is specific to the AI Gateway product.",
+      },
+    ),
+    observability: observability(
+      "detailed",
+      "AI-specific standardised logs, Prometheus and Grafana metrics, request counts, cost and token usage per provider and model, latency, and Konnect Advanced Analytics.",
+    ),
     strengths: [
       "Reuses an existing API gateway deployment rather than adding a separate hop, with 19 documented upstream provider types and 12 AI capabilities.",
       "Data plane placement is a deployment decision, not a vendor region setting, and models expose OpenAI-compatible formats by default.",
@@ -2736,6 +3171,8 @@ export const gateways: Gateway[] = [
       docsSource("https://developer.konghq.com/ai-gateway/"),
       linkedinSource("https://www.linkedin.com/company/konghq/"),
       xSource("thekonginc"),
+      fundingSource("CB Insights"),
+      observabilitySource("Kong documentation"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2808,6 +3245,13 @@ export const gateways: Gateway[] = [
     onPrem: field("yes", "verified", { sources: ["repo"] }),
     certifications: notApplicable("Not applicable at project level."),
     pricingTransparency: notApplicable("Open source; no commercial licence, the project is free to run."),
+    funding: notApplicable<Funding>(
+      "A community-governed open-source project in the Envoy Proxy and CNCF ecosystem, not a venture-backed company or product.",
+    ),
+    observability: observability(
+      "detailed",
+      "GenAI metrics via Prometheus and OpenTelemetry covering token usage, latency and time to first token with provider and model dimensions, GenAI tracing and AI-aware access logs. Infrastructure-level observability rather than a hosted analytics dashboard.",
+    ),
     strengths: [
       "No vendor relationship is required to run it, and 15 upstream providers are documented.",
       "Built on infrastructure many platform teams already operate.",
@@ -2824,6 +3268,7 @@ export const gateways: Gateway[] = [
       docsSource("https://aigateway.envoyproxy.io/docs/"),
       linkedinSource("https://www.linkedin.com/company/envoyproxy/"),
       xSource("envoyproxy"),
+      observabilitySource("aigateway.envoyproxy.io"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2918,6 +3363,13 @@ export const gateways: Gateway[] = [
       note: "Published on AWS's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
+    funding: notApplicable<Funding>(
+      "A product of Amazon Web Services, backed by Amazon.com, Inc. A corporate product has no startup funding profile; see the parent company.",
+    ),
+    observability: observability(
+      "advanced",
+      "CloudWatch generative AI observability provides invocation counts, latency, token usage and errors; Bedrock invocation logging captures requests, responses and metadata into CloudWatch or S3; custom metadata enables cost and usage aggregation by arbitrary dimensions.",
+    ),
     strengths: [
       "Region selection is explicit and documented, including EU regions.",
       "Procurement, billing and access control follow an existing cloud agreement, with 100+ foundation models plus a marketplace.",
@@ -2933,6 +3385,7 @@ export const gateways: Gateway[] = [
       docsSource("https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html"),
       linkedinSource("https://www.linkedin.com/company/amazon-web-services/"),
       xSource("awscloud"),
+      observabilitySource("AWS documentation"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -3028,6 +3481,13 @@ export const gateways: Gateway[] = [
       note: "Published on Google Cloud's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
+    funding: notApplicable<Funding>(
+      "A product of Google Cloud, backed by Google and Alphabet Inc. A corporate product has no startup funding profile; see the parent company.",
+    ),
+    observability: observability(
+      "detailed",
+      "Google Cloud's monitoring, logging and tracing stack provides production telemetry for Vertex AI workloads. Recorded as detailed rather than advanced because much of the observability comes through Google Cloud's general monitoring infrastructure rather than being gateway-native.",
+    ),
     strengths: [
       "Broad modality range across text, vision, image, video, speech, translation and embeddings.",
       "Region selection and data handling terms are documented, with VPC / private networking options.",
@@ -3043,6 +3503,7 @@ export const gateways: Gateway[] = [
       docsSource("https://cloud.google.com/vertex-ai/docs"),
       linkedinSource("https://www.linkedin.com/company/google-cloud/"),
       xSource("googlecloud"),
+      observabilitySource(),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -3155,6 +3616,13 @@ export const gateways: Gateway[] = [
       note: "Published on Microsoft's compliance pages. Scope varies by service and region.",
       sources: ["site"],
     }),
+    funding: notApplicable<Funding>(
+      "A product of Microsoft Corporation. A corporate product has no startup funding profile; see the parent company.",
+    ),
+    observability: observability(
+      "advanced",
+      "End-to-end monitoring, tracing and live traffic monitoring, multi-agent tracing, metrics, alerts, drift detection and cost and performance insights.",
+    ),
     strengths: [
       "Documented EU Data Boundary commitments in addition to region selection.",
       "The largest vendor-published catalogue in this dataset — more than 1,900 models in Foundry Models — with ten documented modalities including OCR and document processing.",
@@ -3170,6 +3638,7 @@ export const gateways: Gateway[] = [
       docsSource("https://learn.microsoft.com/en-us/azure/machine-learning/foundry-models-overview"),
       linkedinSource("https://www.linkedin.com/company/microsoft/"),
       xSource("Azure"),
+      observabilitySource("Microsoft developer blog"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -3177,7 +3646,6 @@ export const gateways: Gateway[] = [
 
 /** Fields that remain deliberately open across most of the dataset. */
 export const OPEN_DATASET_FIELDS = [
-  "Funding history",
   "Pricing model detail",
   "Inference regions for managed gateways",
   "Founding years",

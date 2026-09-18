@@ -6,6 +6,7 @@ import type {
   GatewayType,
   JurisdictionBucket,
   Modality,
+  ObservabilityLevel,
   OpenAiCompatibility,
   OwnershipStatus,
   PricingTransparency,
@@ -391,6 +392,53 @@ export const OPENAI_COMPATIBILITY: Record<OpenAiCompatibility, Term> = {
 
 /** Sort order for the OpenAI-compatible column. Not a ranking of quality. */
 export const OPENAI_COMPATIBILITY_ORDER: OpenAiCompatibility[] = ["yes", "partial", "no", "unknown"];
+
+/**
+ * Built-in observability, on a five-step scale.
+ *
+ * Each level is a statement about what the vendor documents as built into the
+ * product. The scale orders depth, not quality: a self-hosted gateway that
+ * exports metrics to the operator's own stack is rated on what it exposes,
+ * and nothing on the site is ranked by the level.
+ */
+export const OBSERVABILITY: Record<ObservabilityLevel, Term> = {
+  none: {
+    label: "None",
+    description: "No meaningful built-in observability found.",
+    tone: "neutral",
+  },
+  basic: {
+    label: "Basic",
+    description: "Basic usage and billing information.",
+    tone: "caution",
+  },
+  limited: {
+    label: "Limited",
+    description: "Useful logs, metrics or usage, but relatively narrow.",
+    tone: "warn",
+  },
+  detailed: {
+    label: "Detailed",
+    description:
+      "Request-level logs plus cost, token and latency analytics, with useful filtering and breakdowns.",
+    tone: "info",
+  },
+  advanced: {
+    label: "Advanced",
+    description:
+      "Detailed observability plus traces, custom dimensions, dashboards, alerts, evaluation or debugging tooling.",
+    tone: "ok",
+  },
+};
+
+/** The five levels from the shallowest to the deepest, as the methodology lists them. */
+export const OBSERVABILITY_ORDER: ObservabilityLevel[] = [
+  "none",
+  "basic",
+  "limited",
+  "detailed",
+  "advanced",
+];
 
 export const OWNERSHIP_STATUS: Record<OwnershipStatus, Term> = {
   independent: {

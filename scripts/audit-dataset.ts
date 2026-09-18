@@ -14,6 +14,9 @@
  *  - a ranked category whose members have no value for its metric
  *  - a logo path that points at a file which does not exist in /public
  *  - an OpenAI-compatibility value recorded without a status that supports it
+ *  - an observability level recorded without a status that supports it, or a
+ *    funding record that is marked not applicable on an independent company,
+ *    carries a negative round count, or cites no source
  *
  * It then classifies every remaining unresolved field as either a genuine
  * conflict, a not-applicable attribute, or an open research item, and prints
@@ -212,6 +215,37 @@ for (const gateway of gateways) {
       warnings.push(`${gateway.name}: openaiCompatible "${openai.value}" has no source reference`);
     }
   }
+
+  // An observability level is read from documentation, so it must carry a
+  // status and a source that say so.
+  const observability = gateway.observability;
+  if (observability.value !== null) {
+    if (observability.status === "needs-verification") {
+      errors.push(`${gateway.name}: observability "${observability.value}" recorded with a needs-verification status`);
+    }
+    if (!observability.sources?.length) {
+      warnings.push(`${gateway.name}: observability "${observability.value}" has no source reference`);
+    }
+  }
+
+  // Funding describes the operating company. "Not applicable" is reserved for
+  // a cloud provider's product or a community project; an independent company
+  // either has disclosed rounds, none, or funding that could not be verified.
+  const funding = gateway.funding;
+  if (funding.status === "not-applicable" && gateway.type !== "hyperscaler" && ownership !== "community") {
+    errors.push(`${gateway.name}: funding is not applicable, but the record is neither a hyperscaler nor a community project`);
+  }
+  if (funding.value !== null) {
+    if (!Number.isInteger(funding.value.rounds) || funding.value.rounds < 0) {
+      errors.push(`${gateway.name}: funding rounds "${funding.value.rounds}" is not a non-negative integer`);
+    }
+    if (funding.status === "needs-verification") {
+      errors.push(`${gateway.name}: funding recorded with a needs-verification status`);
+    }
+    if (!funding.sources?.length) {
+      warnings.push(`${gateway.name}: funding recorded without a source reference`);
+    }
+  }
 }
 
 // --- Categories ------------------------------------------------------------
@@ -262,6 +296,7 @@ const TRACKED: (keyof Gateway)[] = [
   "productStatus",
   "modalities",
   "openaiCompatible",
+  "observability",
   "gatewayLocations",
   "inferenceLocations",
   "euResidency",
@@ -321,6 +356,14 @@ console.log(`EU-incorporated: ${gateways.filter((g) => g.euJurisdiction.value ==
 console.log(`With a local logo asset: ${gateways.filter((g) => g.logo).length}`);
 console.log(
   `OpenAI compatibility recorded: ${gateways.filter((g) => g.openaiCompatible.value !== null).length}`,
+);
+console.log(
+  `Observability level recorded: ${gateways.filter((g) => g.observability.value !== null).length}`,
+);
+console.log(
+  `Funding recorded: ${gateways.filter((g) => g.funding.value !== null).length} with rounds, ${
+    gateways.filter((g) => g.funding.status === "not-published").length
+  } not publicly listed, ${gateways.filter((g) => g.funding.status === "not-applicable").length} not applicable`,
 );
 console.log("");
 console.log("Unresolved fields by classification:");

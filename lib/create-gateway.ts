@@ -61,6 +61,9 @@ export function createGateway(input: GatewayInput): Gateway {
     openaiCompatible: unverified(
       "OpenAI API compatibility has not been read from the vendor's documentation for this dataset revision.",
     ),
+    observability: unverified(
+      "Built-in observability has not been read from the vendor's documentation for this dataset revision.",
+    ),
     gatewayLocations: unverified(),
     inferenceLocations: unverified(),
     euResidency: unverified(),

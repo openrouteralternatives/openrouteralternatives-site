@@ -10,6 +10,8 @@ import {
   EU_RESIDENCY_ORDER,
   METRIC_STATUS,
   METRIC_STATUS_ORDER,
+  OBSERVABILITY,
+  OBSERVABILITY_ORDER,
   OPENAI_COMPATIBILITY,
   OPENAI_COMPATIBILITY_ORDER,
 } from "@/lib/taxonomy";
@@ -369,6 +371,35 @@ export function Methodology() {
           </Details>
 
           <Details
+            id="observability"
+            title="Observability"
+            summary="Five levels of built-in observability, read from documentation and never scored."
+          >
+            <p>
+              How much a gateway lets a team see of its own traffic decides how quickly cost,
+              latency and failure questions can be answered without a second tool. It is recorded
+              as one of five levels, established from the vendor&rsquo;s own documentation and
+              product material rather than by exercising the dashboards. The levels describe how
+              deep the built-in tooling goes; they are not a quality score, and nothing on this site
+              is ranked by them.
+            </p>
+            <TermList
+              entries={OBSERVABILITY_ORDER.map((key) => ({
+                key,
+                label: OBSERVABILITY[key].label,
+                description: OBSERVABILITY[key].description,
+                tone: OBSERVABILITY[key].tone,
+              }))}
+            />
+            <p>
+              A self-hosted gateway that exposes metrics and traces to the operator&rsquo;s own
+              stack is rated on what it exposes, even where there is no hosted dashboard. Where the
+              public material does not establish a richer layer, the level is the most it supports
+              and is marked estimated rather than raised on assumption.
+            </p>
+          </Details>
+
+          <Details
             id="company-data"
             title="Company, employee and social data"
             summary="Size bands, not headcounts. Snapshots, not rankings."
@@ -393,6 +424,15 @@ export function Methodology() {
               vendor announcement establishes them, because an acquisition can change a
               product&rsquo;s roadmap, pricing and data handling without changing its website. Two
               product names belonging to one company are recorded as a single entry.
+            </p>
+            <p>
+              Funding is recorded as the number of disclosed financing rounds and the investors
+              named in them, from the company&rsquo;s own announcements or, where it publishes none,
+              from a named company database. Grants, strategic investments outside a disclosed
+              round and acquisitions are described rather than counted. Funding that could not be
+              publicly verified is shown as not publicly listed, never as zero, and a cloud
+              provider&rsquo;s product or a community project records the field as not applicable,
+              because a corporation&rsquo;s history is not the funding of one product.
             </p>
           </Details>
 

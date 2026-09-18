@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { Capability, Field, Gateway } from "@/types";
+import type { Capability, Field, Funding, Gateway } from "@/types";
 import { CAPABILITY, OWNERSHIP_STATUS, PRICING_TRANSPARENCY, PRODUCT_STATUS } from "@/lib/taxonomy";
-import { formatDate, formatFollowers, formatQualifiedCount } from "@/lib/format";
+import { formatDate, formatFollowers, formatFunding, formatQualifiedCount } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { NoValue, ProvenanceMark } from "@/components/ui/data-status";
 import { SourceChips } from "@/components/ui/source-chips";
-import { CoverageDetail, OpenAiCompatibilityCell } from "@/components/comparison/cells";
+import {
+  CoverageDetail,
+  ObservabilityCell,
+  OpenAiCompatibilityCell,
+} from "@/components/comparison/cells";
 
 function Definition({
   label,
@@ -33,6 +37,28 @@ function TextValue({ field }: { field: Field<string> }) {
     <span>
       {field.value}
       <ProvenanceMark field={field} />
+    </span>
+  );
+}
+
+/**
+ * Disclosed rounds on the first line, the named investors beneath. A zero is
+ * printed as "no disclosed rounds" so it can never be read as a blank, and a
+ * field with no supported value renders its status like every other field.
+ */
+function FundingValue({ field }: { field: Field<Funding> }) {
+  if (!field.value) return <NoValue variant="text" field={field} />;
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>
+        {formatFunding(field.value)}
+        <ProvenanceMark field={field} />
+      </span>
+      {field.value.investors.length > 0 ? (
+        <span className="text-[12.5px] leading-relaxed text-ink-muted">
+          Backed by {field.value.investors.join(", ")}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -176,7 +202,7 @@ export function ExpandedRow({ gateway }: { gateway: Gateway }) {
               <NumberValue field={gateway.founded} />
             </Definition>
             <Definition label="Funding">
-              <TextValue field={gateway.funding} />
+              <FundingValue field={gateway.funding} />
             </Definition>
             <Definition label="Ownership">
               <TermValue field={gateway.ownershipStatus} terms={OWNERSHIP_STATUS} />
@@ -228,6 +254,14 @@ export function ExpandedRow({ gateway }: { gateway: Gateway }) {
             </Definition>
             <Definition label="Open source">
               <CapabilityValue field={gateway.openSource} />
+            </Definition>
+            <Definition label="Observability">
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <ObservabilityCell field={gateway.observability} size="sm" />
+                {gateway.observability.value !== null && gateway.observability.note ? (
+                  <span className="text-[12.5px] text-ink-muted">{gateway.observability.note}</span>
+                ) : null}
+              </span>
             </Definition>
             <Definition label="DPA">
               <CapabilityValue field={gateway.dpa} />

@@ -1,3 +1,5 @@
+import type { Funding } from "@/types";
+
 /** Formatting helpers. Numbers in this dataset are measurements, so they are
  *  always rendered with grouping and tabular figures. */
 
@@ -16,6 +18,19 @@ export function formatQualifiedCount(
   qualifier?: "exact" | "at-least",
 ): string {
   return qualifier === "at-least" ? `${formatCount(n)}+` : formatCount(n);
+}
+
+/**
+ * One line for a funding record: the disclosed round count and, where the
+ * company states one, the total raised. Investors are rendered separately.
+ * Zero reads as "no disclosed rounds", which is a fact, not a blank.
+ */
+export function formatFunding(funding: Funding): string {
+  const rounds =
+    funding.rounds === 0
+      ? "No disclosed rounds"
+      : `${formatCount(funding.rounds)} disclosed ${funding.rounds === 1 ? "round" : "rounds"}`;
+  return funding.totalRaised ? `${rounds} · ${funding.totalRaised} raised` : rounds;
 }
 
 /**

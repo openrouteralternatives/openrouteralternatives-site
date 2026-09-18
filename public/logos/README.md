@@ -32,7 +32,7 @@ identification only. No logo was taken from a third-party logo directory.
 | `helicone.png` | Helicone | helicone.ai/favicon.ico (256 px PNG entry) |
 | `kong-ai-gateway.png` | Kong AI Gateway | konghq.com/favicon-180.png |
 | `litellm.png` | LiteLLM | litellm.ai site icon (Webflow asset CDN) |
-| `llmgateway.png` | llmgateway.io | llmgateway.io/favicon/apple-touch-icon.png |
+| `llmgateway.svg` | llmgateway.io | The icon paths of the inline `LLM Gateway` wordmark SVG on llmgateway.io, filled dark as the site itself renders it on light backgrounds. The apple-touch-icon is a white-on-transparent mark and was invisible in the white logo box. |
 | `martian.png` | Martian | withmartian.com site icon (Webflow asset CDN) |
 | `maxim-ai.png` | Maxim AI (Bifrost) | getmaxim.ai site icon (Framer asset CDN) |
 | `nexos-ai.png` | nexos.ai | nexos.ai `apple-touch-icon` 180 px (served from the company's own sb.nordcdn.com asset CDN) |

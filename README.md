@@ -132,6 +132,21 @@ entries, using the vendor's own definition) are two `Metric` fields like `models
 expanded row and profile show the second one where a vendor publishes both. Neither is
 ever computed from the other or from modalities.
 
+### Funding and observability
+
+`funding` is a `Field<Funding>` — the number of disclosed financing rounds, the investors
+named in them and, where the company states one, the total raised. It describes the
+operating company, so Kong's rounds are Kong Inc.'s and a hyperscaler product records
+`not-applicable`. Funding that could not be publicly verified is `not-published`
+("Not publicly listed"), never zero; a disputed round count keeps the `conflicting` status
+with both figures in the note. Investors render as chips in the profile's Company section
+and as a line in the expanded table row; there is no investors column.
+
+`observability` is a `Field<"none" | "basic" | "limited" | "detailed" | "advanced">`, read
+from vendor documentation against the five-level scale defined in the methodology section
+and in `OBSERVABILITY` in [`lib/taxonomy.ts`](lib/taxonomy.ts). It has its own table
+column, sorted on the scale, and is never used to rank anything.
+
 ### Applying a research pass
 
 The September 17, 2026 verified research is the current source of truth for vendor

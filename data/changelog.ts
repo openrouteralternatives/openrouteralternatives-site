@@ -8,6 +8,22 @@ import type { ChangelogEntry } from "@/types";
  */
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-09-18",
+    kind: "company",
+    title: "Funding and observability recorded for every gateway",
+    summary:
+      "The funding field, open since the baseline, now holds the number of disclosed financing rounds and the investors named in them for 17 gateways, from the companies' own announcements or a named company database. Seven gateways with no credible public financing record are marked not publicly listed rather than zero, and the three hyperscaler products and Envoy AI Gateway record the field as not applicable. A new observability field rates every gateway's built-in observability on a five-level scale defined in the methodology, read from vendor documentation. Neither field feeds any ranking.",
+    changes: [
+      { gateway: null, field: "Funding", previous: "Not recorded", next: "Disclosed rounds and investors for 17 gateways; not publicly listed for LiteLLM, Atlas Cloud, Anannas, RouteScope, EUrouter, AI/ML API and Novita AI; not applicable for Amazon Bedrock, Azure AI Foundry, Google Vertex AI and Envoy AI Gateway", source: "Sep 18, 2026 funding research" },
+      { gateway: "helicone", field: "Funding", previous: "Not recorded", next: "Two rounds (Y Combinator, CoughDrop Capital, Realm Capital Ventures) with an unresolved status: StartupIntros records two, Crunchbase one", source: "StartupIntros; Crunchbase" },
+      { gateway: "maxim-ai", field: "Funding", previous: "Not recorded", next: "One round: $3M seed, June 2024, Elevation Capital. Funding of unrelated companies named Bifrost is not attributed", source: "CB Insights" },
+      { gateway: "kong-ai-gateway", field: "Funding", previous: "Not recorded", next: "Eight rounds and about $345M for Kong Inc., the company, not the AI Gateway product", source: "CB Insights" },
+      { gateway: "cortecs", field: "Funding", previous: "Not recorded", next: "No disclosed financing round; one grant from AI-on-Demand / European ecosystem programmes recorded as a backer, not a round", source: "Crunchbase" },
+      { gateway: "llmgateway", field: "Funding", previous: "Not recorded", next: "No disclosed rounds: public company information states it has never raised external funding", source: "prospeo.io" },
+      { gateway: null, field: "Observability", previous: "Not recorded", next: "Advanced for 11 gateways, Detailed for 9, Limited for 6, Basic for 2, None for 0", source: "Sep 18, 2026 observability research over vendor documentation" },
+    ],
+  },
+  {
     date: "2026-09-17",
     kind: "dataset",
     title: "Verified research pass applied as the source of truth",

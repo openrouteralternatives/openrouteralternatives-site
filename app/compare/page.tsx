@@ -52,7 +52,7 @@ export default function ComparePage() {
           <DataLegend className="mb-4" />
           <ComparisonTable
             gateways={gateways}
-            caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, modalities, employees, deployment, zero data retention, certifications and social presence."
+            caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, modalities, employees, deployment, zero data retention, observability, certifications and social presence."
           />
 
           <div className="mt-10 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">

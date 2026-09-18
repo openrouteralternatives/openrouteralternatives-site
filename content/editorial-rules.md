@@ -60,6 +60,17 @@ reconstructed from third-party databases.
 **Social.** LinkedIn and X captured on the same date so the pair stays comparable, and
 displayed rounded by scale. Follower count is never used to order anything.
 
+**Funding.** The number of disclosed financing rounds and the investors named in them,
+describing the operating company, from its own announcements or a named company database.
+Grants, strategic investments outside a disclosed round and acquisitions are described,
+never counted. Funding that could not be publicly verified is "Not publicly listed", never
+zero; zero is written only where the company is known to have raised no external round. A
+cloud provider's product or a community project records "Not applicable".
+
+**Observability.** One of five levels read from vendor documentation, never inferred from
+the product category and never used to rank anything: None · Basic · Limited · Detailed ·
+Advanced. The definitions live in the methodology section.
+
 ## The three residency attributes
 
 These are separate fields, populated from separate sources, and none is derived from

@@ -63,7 +63,7 @@ export default function HomePage() {
           <div className="mt-4">
             <ComparisonTable
               gateways={gateways}
-              caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, OpenAI compatibility, modalities, deployment and company data."
+              caption="Comparison of AI gateways by jurisdiction, EU residency, model count, providers, OpenAI compatibility, modalities, deployment, observability and company data."
             />
           </div>
           <p className="mt-3 text-[12.5px] text-ink-subtle">

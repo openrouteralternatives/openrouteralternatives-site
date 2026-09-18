@@ -10,6 +10,7 @@ import {
   EU_RESIDENCY_ORDER,
   JURISDICTION,
   JURISDICTION_ORDER,
+  OBSERVABILITY_ORDER,
   OPENAI_COMPATIBILITY_ORDER,
   OWNERSHIP_ORDER,
   PRICING_ORDER,
@@ -23,12 +24,14 @@ import {
   CertificationsCell,
   DeploymentCell,
   EmployeesCell,
+  FundingCell,
   OpenAiCompatibilityCell,
   GatewayCell,
   JurisdictionCell,
   LocationsCell,
   ModalityCell,
   ModelsCell,
+  ObservabilityCell,
   ProvidersCell,
   ResidencyCell,
   SocialCell,
@@ -72,6 +75,17 @@ function zdrRank(gateway: Gateway): number | undefined {
   return value === null ? undefined : CAPABILITY_ORDER.indexOf(value);
 }
 
+/**
+ * Sort key for observability: position on the five-step scale, so a
+ * descending sort shows the deepest built-in observability first. Rows with no
+ * recorded level return undefined and stay at the bottom in both directions.
+ * This orders the column; it ranks nothing.
+ */
+function observabilityRank(gateway: Gateway): number | undefined {
+  const value = gateway.observability.value;
+  return value === null ? undefined : OBSERVABILITY_ORDER.indexOf(value);
+}
+
 function ownershipRank(gateway: Gateway): number | undefined {
   const value = gateway.ownershipStatus.value;
   return value === null || value === "unresolved" ? undefined : OWNERSHIP_ORDER.indexOf(value);
@@ -94,9 +108,11 @@ export const COLUMN_LABELS: Record<string, string> = {
   ownership: "Ownership",
   pricing: "Pricing",
   employees: "Employees",
+  funding: "Funding",
   gatewayLocation: "Gateway location",
   deployment: "Deployment",
   zdr: "ZDR",
+  observability: "Observability",
   certifications: "Certifications",
   linkedin: "LinkedIn",
   x: "X",
@@ -120,7 +136,7 @@ export const columns: GatewayColumnDef[] = [
     cell: ({ row }) => <GatewayCell gateway={row.original} />,
     enableHiding: false,
     sortFn: "alphanumeric",
-    meta: { width: 260 },
+    meta: { width: 208 },
   },
   {
     id: "jurisdiction",
@@ -199,6 +215,19 @@ export const columns: GatewayColumnDef[] = [
     meta: { width: 124 },
   },
   {
+    id: "funding",
+    // Disclosed round count. Rows with no supported value (not publicly
+    // listed, not applicable) return undefined and stay at the bottom in both
+    // directions, so an unverified company is never sorted as zero rounds.
+    accessorFn: (gateway) => gateway.funding.value?.rounds ?? undefined,
+    header: COLUMN_LABELS.funding,
+    cell: ({ row }) => <FundingCell field={row.original.funding} />,
+    sortFn: numeric,
+    sortDescFirst: true,
+    sortUndefined: "last",
+    meta: { align: "right", width: 112 },
+  },
+  {
     id: "gatewayLocation",
     accessorFn: (gateway) => gateway.gatewayLocations.value?.join(", ") ?? undefined,
     header: COLUMN_LABELS.gatewayLocation,
@@ -227,6 +256,16 @@ export const columns: GatewayColumnDef[] = [
     sortFn: numeric,
     sortUndefined: "last",
     meta: { width: 116 },
+  },
+  {
+    id: "observability",
+    accessorFn: observabilityRank,
+    header: COLUMN_LABELS.observability,
+    cell: ({ row }) => <ObservabilityCell field={row.original.observability} />,
+    sortFn: numeric,
+    sortDescFirst: true,
+    sortUndefined: "last",
+    meta: { width: 132 },
   },
   {
     id: "certifications",

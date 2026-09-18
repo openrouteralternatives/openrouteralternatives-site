@@ -89,6 +89,35 @@ export type Capability = "yes" | "configurable" | "enterprise" | "no" | "unknown
  */
 export type OpenAiCompatibility = "yes" | "partial" | "no" | "unknown";
 
+/**
+ * Depth of the observability a gateway ships with, on a five-step scale.
+ *
+ * Read from the vendor's own documentation and product material, never from
+ * exercising the dashboards. It describes what is built in; a gateway that
+ * relies on exporting to external tools is rated on what it exposes itself.
+ * A comparison attribute, not a score: nothing is ranked by it.
+ */
+export type ObservabilityLevel = "none" | "basic" | "limited" | "detailed" | "advanced";
+
+/**
+ * Disclosed financing of the operating company.
+ *
+ * `rounds` counts disclosed financing rounds (pre-seed, seed, Series A and
+ * later). Grants, strategic investments outside a disclosed round and
+ * acquisitions are never counted; they are described in the field note. A
+ * record with `rounds: 0` states that the company is known to have raised no
+ * external round, which is a different fact from funding that could not be
+ * publicly verified (`value: null`, status `not-published`) or funding that
+ * does not apply to a corporate product or community project (`not-applicable`).
+ */
+export interface Funding {
+  rounds: number;
+  /** Investors, funds and backers named in the disclosed rounds, in the order announced. */
+  investors: string[];
+  /** Total raised as the company itself states it, where it publishes one. */
+  totalRaised?: string;
+}
+
 export interface EmployeeBand {
   /** LinkedIn company-size band, e.g. "11-50". */
   band: string;
@@ -134,7 +163,8 @@ export interface Gateway {
   euJurisdiction: Field<boolean>;
   founded: Field<number>;
   employees: Field<EmployeeBand>;
-  funding: Field<string>;
+  /** Disclosed financing rounds and investors of the operating company. */
+  funding: Field<Funding>;
   ownership: Field<string>;
   ownershipStatus: Field<OwnershipStatus>;
   parentCompany: Field<string>;
@@ -164,6 +194,8 @@ export interface Gateway {
   modalities: Field<Modality[]>;
   /** Whether clients written against the OpenAI API can talk to the gateway. */
   openaiCompatible: Field<OpenAiCompatibility>;
+  /** Depth of built-in observability, on the five-step scale in the methodology. */
+  observability: Field<ObservabilityLevel>;
 
   // --- Infrastructure ------------------------------------------------------
   gatewayLocations: Field<string[]>;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowUpRight, ChevronRight } from "lucide-react";
-import type { Capability, Field, Gateway } from "@/types";
+import type { Capability, Field, Funding, Gateway } from "@/types";
 import {
   CAPABILITY,
   DEPLOYMENT,
@@ -8,6 +8,7 @@ import {
   GATEWAY_TYPE,
   JURISDICTION,
   MODALITY,
+  OBSERVABILITY,
   OPENAI_COMPATIBILITY,
   OWNERSHIP_STATUS,
   PRICING_TRANSPARENCY,
@@ -22,6 +23,7 @@ import {
   flagEmoji,
   formatDate,
   formatFollowers,
+  formatFunding,
   formatQualifiedCount,
 } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +31,7 @@ import { NoValue, ProvenanceMark, StatusChip } from "@/components/ui/data-status
 import { SourceChips } from "@/components/ui/source-chips";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GatewayLogo } from "@/components/gateways/gateway-logo";
-import { OpenAiCompatibilityCell } from "@/components/comparison/cells";
+import { ObservabilityCell, OpenAiCompatibilityCell } from "@/components/comparison/cells";
 import { Container } from "@/components/layout/container";
 
 function Section({
@@ -129,6 +131,26 @@ function CapabilityField({ field }: { field: Field<Capability> }) {
         {term.label}
       </Badge>
       {field.note ? <span className="text-[12.5px] text-ink-muted">{field.note}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * Disclosed financing: the round count and stated total on one line, with the
+ * field note beneath so a grant, a strategic investment or a database
+ * disagreement is explained next to the figure rather than hidden in a tooltip.
+ */
+function FundingField({ field }: { field: Field<Funding> }) {
+  if (!field.value) return <NoValue variant="text" field={field} />;
+  return (
+    <span className="inline-flex flex-col gap-1.5">
+      <span>
+        {formatFunding(field.value)}
+        <ProvenanceMark field={field} />
+      </span>
+      {field.note ? (
+        <span className="text-[12.5px] leading-relaxed text-ink-muted">{field.note}</span>
+      ) : null}
     </span>
   );
 }
@@ -479,6 +501,21 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                       <NoValue field={gateway.deployment} />
                     )}
                   </Row>
+                  <Row label="Observability">
+                    <span className="inline-flex flex-col gap-1.5">
+                      <span>
+                        <ObservabilityCell field={gateway.observability} size="sm" />
+                      </span>
+                      <span className="text-[12.5px] leading-relaxed text-ink-muted">
+                        {gateway.observability.value !== null
+                          ? OBSERVABILITY[gateway.observability.value].description
+                          : "Not recorded in the current dataset revision. The level is read from vendor documentation against the five-step scale in the methodology, never assumed."}
+                        {gateway.observability.value !== null && gateway.observability.note
+                          ? ` ${gateway.observability.note}`
+                          : ""}
+                      </span>
+                    </span>
+                  </Row>
                   <Row label="Zero data retention">
                     <CapabilityField field={gateway.zeroDataRetention} />
                   </Row>
@@ -528,7 +565,7 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                       <Row label="Routing features">
                         <TextField field={selfHosted.routing} />
                       </Row>
-                      <Row label="Observability">
+                      <Row label="Observability tooling">
                         <TextField field={selfHosted.observability} />
                       </Row>
                       <Row label="Enterprise options">
@@ -574,8 +611,20 @@ export function GatewayProfile({ gateway }: { gateway: Gateway }) {
                     )}
                   </Row>
                   <Row label="Funding">
-                    <TextField field={gateway.funding} />
+                    <FundingField field={gateway.funding} />
                   </Row>
+                  {gateway.funding.value && gateway.funding.value.investors.length > 0 ? (
+                    <Row label="Backed by">
+                      <span className="flex flex-wrap gap-1.5">
+                        {gateway.funding.value.investors.map((investor) => (
+                          <Badge key={investor} tone="outline" size="sm">
+                            {investor}
+                          </Badge>
+                        ))}
+                        <ProvenanceMark field={gateway.funding} />
+                      </span>
+                    </Row>
+                  ) : null}
                   <Row label="Ownership">
                     <TermField field={gateway.ownershipStatus} terms={OWNERSHIP_STATUS} />
                   </Row>

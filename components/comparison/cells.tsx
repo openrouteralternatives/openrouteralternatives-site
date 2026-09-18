@@ -3,8 +3,10 @@ import type {
   Capability,
   Deployment,
   Field,
+  Funding,
   Gateway,
   Modality,
+  ObservabilityLevel,
   OpenAiCompatibility,
 } from "@/types";
 import {
@@ -13,12 +15,13 @@ import {
   EU_RESIDENCY,
   JURISDICTION,
   MODALITY,
+  OBSERVABILITY,
   OPENAI_COMPATIBILITY,
   OWNERSHIP_STATUS,
   PRICING_TRANSPARENCY,
   PRODUCT_STATUS,
 } from "@/lib/taxonomy";
-import { flagEmoji, formatCount, formatQualifiedCount } from "@/lib/format";
+import { flagEmoji, formatCount, formatFunding, formatQualifiedCount } from "@/lib/format";
 import { metricDisplay } from "@/lib/metric";
 import { routesOrEndpoints, secondaryCoverage } from "@/lib/gateway";
 import { MetricCell, MetricStatusChip } from "@/components/ui/metric-value";
@@ -33,7 +36,13 @@ import {
 import { GatewayLogo } from "@/components/gateways/gateway-logo";
 import { cn } from "@/lib/utils";
 
-/** Gateway name cell: mark, linked name, one-line differentiator. */
+/**
+ * Gateway name cell: mark, linked name, differentiator on up to two lines.
+ *
+ * The differentiator wraps rather than truncates so the column can stay
+ * narrow without cutting the sentence short; anything beyond two lines is
+ * clamped, and the full sentence is on the profile.
+ */
 export function GatewayCell({ gateway }: { gateway: Gateway }) {
   return (
     <div className="flex items-center gap-3">
@@ -45,9 +54,40 @@ export function GatewayCell({ gateway }: { gateway: Gateway }) {
         >
           {gateway.name}
         </Link>
-        <p className="truncate text-[11.5px] text-ink-subtle">{gateway.differentiator}</p>
+        <p className="line-clamp-2 text-[11.5px] leading-snug text-ink-subtle">
+          {gateway.differentiator}
+        </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Disclosed financing, compact.
+ *
+ * The round count on the first line and the stated total, where the company
+ * publishes one, beneath it. Investors and round context stay in the tooltip
+ * and on the profile, so the column never holds a list of names. Zero rounds
+ * prints as a figure, not a dash: it is a fact about the company.
+ */
+export function FundingCell({ field }: { field: Field<Funding> }) {
+  if (!field.value) return <NoValue compact field={field} />;
+  const { rounds, totalRaised, investors } = field.value;
+  const backers = investors.length > 0 ? ` Backed by ${investors.join(", ")}.` : "";
+  const label = `${formatFunding(field.value)}.${backers} ${provenanceText(field)}`;
+
+  return (
+    <InfoTip label={label}>
+      <button type="button" className="cursor-help text-right leading-tight" aria-label={label}>
+        <span className="tnum block text-[13px] text-ink">
+          {`${formatCount(rounds)} ${rounds === 1 ? "round" : "rounds"}`}
+          <ProvenanceGlyph field={field} />
+        </span>
+        {totalRaised ? (
+          <span className="tnum block text-[11px] text-ink-subtle">{totalRaised} raised</span>
+        ) : null}
+      </button>
+    </InfoTip>
   );
 }
 
@@ -342,6 +382,40 @@ export function OpenAiCompatibilityCell({
         <Badge tone={recorded ? term.tone : "neutral"} size={size} dot={recorded}>
           {term.label}
           {recorded ? <ProvenanceGlyph field={field} /> : null}
+        </Badge>
+      </button>
+    </InfoTip>
+  );
+}
+
+/**
+ * Built-in observability level.
+ *
+ * One of five labels on the scale the methodology defines, never a score. The
+ * tooltip carries the level's definition and what was found in the vendor's
+ * material; a field with no recorded level renders its status instead.
+ */
+export function ObservabilityCell({
+  field,
+  size = "xs",
+}: {
+  field: Field<ObservabilityLevel>;
+  size?: "xs" | "sm";
+}) {
+  if (!field.value) return <NoValue compact field={field} />;
+  const term = OBSERVABILITY[field.value];
+  const description = `${term.description} ${provenanceText(field)}`;
+
+  return (
+    <InfoTip label={description}>
+      <button
+        type="button"
+        className="cursor-help"
+        aria-label={`Observability ${term.label}: ${description}`}
+      >
+        <Badge tone={term.tone} size={size} dot>
+          {term.label}
+          <ProvenanceGlyph field={field} />
         </Badge>
       </button>
     </InfoTip>
