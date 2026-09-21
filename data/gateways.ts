@@ -431,7 +431,7 @@ export const gateways: Gateway[] = [
         note: "Officially stated floor. Between 33 and 68 providers are reached depending on which feature scopes are counted.",
       }),
       [
-        measured(78, MEASUREMENT_DATE, {
+        measured(68, MEASUREMENT_DATE, {
           sourceIds: ["providers-endpoint"],
           note: "Distinct providers across all nine features exposed by the public provider/subfeature endpoint.",
         }),
@@ -698,134 +698,6 @@ export const gateways: Gateway[] = [
       xSource("RequestyAI"),
       fundingSource("requesty.ai announcement"),
       observabilitySource("requesty.ai"),
-    ],
-    lastVerified: DATASET_DATE,
-  }),
-
-  createGateway({
-    id: "orq-ai",
-    slug: "orq-ai",
-    name: "Orq.ai",
-    website: "https://orq.ai",
-    logo: "/logos/orq-ai.svg",
-    summary:
-      "A generative AI gateway and control plane combining model access with routing, governance, observability, evaluation and agent tooling.",
-    differentiator:
-      "EU-native AI gateway and control plane combining routing, governance, observability and agent tooling.",
-    type: "enterprise",
-    tier: "primary",
-    categories: ["provider-networks", "eu-gateways", "eu-hosted", "multimodal", "enterprise", "agent-gateways"],
-    jurisdictionBucket: "eu",
-    legalEntity: field("Orq.AI Holding B.V.", "verified", {
-      note: "KVK number 88882179.",
-      sources: ["registry"],
-      asOf: DATASET_DATE,
-    }),
-    country: field("Netherlands", "verified", { sources: ["registry", "research"] }),
-    countryCode: field("NL", "verified", { sources: ["registry"] }),
-    city: field("Amsterdam", "verified", { sources: ["registry"] }),
-    euJurisdiction: field(true, "verified", { note: EU_NOTE, sources: ["registry"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["registry", "research"] }),
-    productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: employees("11-50"),
-    social: {
-      linkedinUrl: "https://www.linkedin.com/company/orqai/",
-      xUrl: "https://x.com/orq_ai",
-      linkedinFollowers: approxFollowers(7800, "LinkedIn"),
-      xFollowers: exactFollowers(326, "X"),
-      snapshotDate: DATASET_DATE,
-    },
-    models: metric(
-      official("500+", DATASET_DATE, {
-        sourceIds: ["site", "research"],
-        note: "Vendor floor. No public model endpoint is exposed, so no measurement was possible.",
-      }),
-    ),
-    providers: metric(official("30+", DATASET_DATE, { sourceIds: ["docs", "research"] })),
-    routes: metric(
-      notPublished("One unified API plus Model Context Protocol access; no route or endpoint count is published."),
-    ),
-    modalities: field(["llm", "vision", "embeddings", "image", "stt", "mcp"], "vendor-stated", {
-      note: "The vendor lists LLM, vision, code, embeddings, image, reasoning and speech, and documents Model Context Protocol access alongside its unified API. Code and reasoning are LLM capabilities rather than modalities in this taxonomy.",
-      sources: ["site", "research"],
-      asOf: DATASET_DATE,
-    }),
-    openaiCompatible: field("yes", "vendor-stated", {
-      note: "The vendor documents an OpenAI-compatible API.",
-      sources: ["site", "research"],
-    }),
-    deployment: field(["hosted", "vpc", "on-prem"], "vendor-stated", {
-      note: "Includes air-gapped on-premise deployment.",
-      sources: ["site", "research"],
-    }),
-    vpc: field("yes", "vendor-stated", { sources: ["site"] }),
-    onPrem: field("yes", "vendor-stated", {
-      note: "Air-gapped deployment is offered.",
-      sources: ["site"],
-    }),
-    gatewayLocations: field(["Amsterdam", "EU regions"], "vendor-stated", { sources: ["research"] }),
-    certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
-      note: "The vendor also positions around GDPR and HIPAA. Those are regulatory regimes rather than certifications, so they are not listed here as certifications.",
-      sources: ["site"],
-    }),
-    zeroDataRetention: field("configurable", "vendor-stated", {
-      note: "Not zero retention by default: the pricing page states 30-day retention as the default, so ZDR is recorded as configurable rather than as a blanket yes.",
-      sources: ["pricing", "research"],
-    }),
-    euResidency: field("eu-by-default", "vendor-stated", {
-      note: "Hosted in EU regions with EU sovereign hosting options, in addition to VPC and on-premise deployment.",
-      sources: ["site", "research"],
-      asOf: DATASET_DATE,
-    }),
-    pricingTransparency: field("public-with-enterprise", "verified", {
-      sources: ["pricing", "research"],
-      asOf: DATASET_DATE,
-    }),
-    openSource: field("no", "verified", { sources: ["site"] }),
-    funding: funding(
-      3,
-      [
-        "seed + speed Ventures",
-        "Galion.exe",
-        "XO Ventures",
-        "xdeck ventures",
-        "Curiosity VC",
-        "Spacetime",
-        "Waves Capital",
-        "GoldenEggCheck",
-      ],
-      {
-        note: "An €800K pre-seed, a €1.5M extension and a €5M seed round: three financing events.",
-      },
-    ),
-    observability: observability(
-      "advanced",
-      "Every routed request becomes a trace carrying cost, tokens, latency and the full payload; OpenTelemetry export, runtime budgets and spend limits, spans for requests, agent steps, evaluators and guardrails, and data export.",
-    ),
-    strengths: [
-      "EU-incorporated with a registry-confirmed operating entity, EU-region hosting by default and sovereign hosting options.",
-      "Hosted, VPC, on-premise and air-gapped deployment documented, with SOC 2 Type II and ISO/IEC 27001 stated.",
-      "Model access is coupled to governance, observability, evaluation and agent workflows rather than routing alone.",
-    ],
-    limitations: [
-      "No enumerable public catalogue, so the 500+ figure is a vendor floor rather than a measurement.",
-      "Retention is 30 days by default according to the pricing page, so zero data retention is a setting rather than the baseline.",
-      "No route or endpoint count is published.",
-    ],
-    bestFor: [
-      "Teams that want model access, governance and evaluation workflows in one EU-incorporated platform.",
-    ],
-    sources: [
-      researchSource(),
-      baselineSource(),
-      siteSource("https://orq.ai"),
-      docsSource("https://orq.ai/llm-providers"),
-      pricingSource("https://orq.ai/pricing"),
-      registrySource("KVK 88882179"),
-      linkedinSource("https://www.linkedin.com/company/orqai/"),
-      xSource("orq_ai"),
-      fundingSource("orq.ai announcements"),
-      observabilitySource("orq.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -2136,127 +2008,6 @@ export const gateways: Gateway[] = [
   }),
 
   createGateway({
-    id: "braintrust",
-    slug: "braintrust",
-    name: "Braintrust",
-    website: "https://www.braintrust.dev",
-    logo: "/logos/braintrust.png",
-    summary:
-      "An evaluation and observability platform for AI products, including a proxy/gateway layer that routes requests to multiple model providers.",
-    differentiator:
-      "AI evaluation and observability platform with a model proxy/gateway layer.",
-    type: "enterprise",
-    tier: "primary",
-    categories: ["provider-networks", "eu-hosted", "multimodal", "enterprise"],
-    jurisdictionBucket: "us",
-    legalEntity: field("Braintrust Data, Inc.", "verified", {
-      sources: ["site"],
-      asOf: DATASET_DATE,
-    }),
-    country: field("United States", "verified", { sources: ["site", "research"] }),
-    countryCode: field("US", "verified", { sources: ["site"] }),
-    city: field("San Francisco", "verified", { sources: ["linkedin"] }),
-    euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
-    productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: employees("51-200"),
-    social: {
-      linkedinUrl: "https://www.linkedin.com/company/braintrustdata/",
-      xUrl: "https://x.com/braintrust",
-      linkedinFollowers: exactFollowers(15424, "LinkedIn"),
-      xFollowers: exactFollowers(7610, "X"),
-      snapshotDate: DATASET_DATE,
-    },
-    models: metric(
-      variable(
-        "The AI proxy reaches whichever providers the customer configures with their own keys, so there is no fixed catalogue to count and the vendor publishes no comparable model figure.",
-      ),
-    ),
-    providers: metric(
-      listed(17, "documented", DATASET_DATE, {
-        display: "17+",
-        sourceIds: ["docs", "research"],
-        note: "At least 17 documented direct, cloud and custom provider integrations. The reachable set depends on the customer's configuration.",
-      }),
-    ),
-    routes: metric(notPublished("Multiple API surfaces; no route or endpoint count is stated.")),
-    modalities: field(["llm", "image", "audio"], "vendor-stated", {
-      note: "Text, image and audio, plus provider-dependent modalities that are not enumerated.",
-      sources: ["docs", "research"],
-      asOf: DATASET_DATE,
-    }),
-    openaiCompatible: field("yes", "vendor-stated", {
-      note: "The AI proxy is documented as an OpenAI-compatible endpoint.",
-      sources: ["docs", "research"],
-    }),
-    deployment: field(["hosted", "vpc", "self-hosted"], "vendor-stated", {
-      note: "Hosted, bring-your-own-cloud / VPC, and self-hosted data plane.",
-      sources: ["docs", "research"],
-    }),
-    vpc: field("yes", "vendor-stated", { sources: ["docs"] }),
-    gatewayLocations: field(
-      ["US and EU data-plane option", "Customer-controlled VPC / BYOC"],
-      "vendor-stated",
-      { sources: ["research"] },
-    ),
-    certifications: field(["SOC 2"], "vendor-stated", {
-      note: "SOC 2 alongside enterprise security controls.",
-      sources: ["site", "research"],
-    }),
-    zeroDataRetention: notStated("zero-data-retention"),
-    euResidency: field("eu-available", "vendor-stated", {
-      note: "A US or EU data-plane option is offered, and a customer-controlled VPC or BYOC deployment is also possible.",
-      sources: ["docs", "research"],
-      asOf: DATASET_DATE,
-    }),
-    pricingTransparency: field("public-with-enterprise", "verified", {
-      sources: ["site", "research"],
-    }),
-    openSource: field("no", "verified", { sources: ["site"] }),
-    funding: funding(
-      4,
-      [
-        "Andreessen Horowitz (a16z)",
-        "ICONIQ",
-        "Greylock",
-        "Elad Gil",
-        "Basecase Capital",
-        "SV Angel",
-        "BoxGroup",
-        "Datadog",
-        "Databricks Ventures",
-      ],
-      {
-        note: "An initial round, a $5.1M seed, a $36M Series A and an $80M Series B, with numerous angel investors beyond those named. The company stated $45M raised after the Series A before announcing the Series B.",
-      },
-    ),
-    observability: observability(
-      "advanced",
-      "Full traces with nested spans for LLM, tool and retrieval calls, token, cost and latency data, dashboards and custom views, live scoring, alerts and evaluation integration.",
-    ),
-    strengths: [
-      "Routing is coupled to evaluation, so model changes can be measured against test sets rather than chosen by catalogue size.",
-      "An EU data-plane option and customer-controlled VPC/BYOC deployment, with SOC 2 stated, from a 51–200 person company with a confirmed operating entity.",
-    ],
-    limitations: [
-      "No fixed model catalogue: the reachable set follows the customer's provider keys, so it is an enterprise control-plane product rather than a model marketplace.",
-      "No zero-data-retention position is stated.",
-    ],
-    bestFor: ["Teams that select models by evaluation results rather than catalogue size."],
-    sources: [
-      researchSource(),
-      baselineSource(),
-      siteSource("https://www.braintrust.dev"),
-      docsSource("https://www.braintrust.dev/docs"),
-      linkedinSource("https://www.linkedin.com/company/braintrustdata/"),
-      xSource("braintrust"),
-      fundingSource("braintrust.dev announcements"),
-      observabilitySource("braintrust.dev"),
-    ],
-    lastVerified: DATASET_DATE,
-  }),
-
-  createGateway({
     id: "respan",
     slug: "respan",
     name: "Respan",
@@ -2466,234 +2217,6 @@ export const gateways: Gateway[] = [
       xSource("withmartian"),
       fundingSource("Accenture newsroom"),
       observabilitySource(),
-    ],
-    lastVerified: DATASET_DATE,
-  }),
-
-  createGateway({
-    id: "not-diamond",
-    slug: "not-diamond",
-    name: "Not Diamond",
-    website: "https://www.notdiamond.ai",
-    logo: "/logos/not-diamond.png",
-    summary:
-      "A routing layer that selects a model per prompt based on learned routing decisions, with a focus on coding agents.",
-    differentiator:
-      "Intelligent model router aimed at coding agents and prompt-level model selection.",
-    type: "managed",
-    tier: "primary",
-    categories: ["agent-gateways"],
-    jurisdictionBucket: "us",
-    legalEntity: field("Not Diamond, Inc.", "verified", {
-      sources: ["site"],
-      asOf: DATASET_DATE,
-    }),
-    country: field("United States", "verified", { sources: ["site", "research"] }),
-    countryCode: field("US", "verified", { sources: ["site"] }),
-    city: field("San Francisco", "verified", { sources: ["linkedin", "research"] }),
-    euJurisdiction: field(false, "verified", { sources: ["site"] }),
-    ownershipStatus: field("independent", "verified", { sources: ["site", "research"] }),
-    productStatus: field("active", "verified", { sources: ["site"] }),
-    employees: employees(
-      "11-50",
-      "LinkedIn company-size band, with 35 employees visible on the profile.",
-    ),
-    social: {
-      linkedinUrl: "https://www.linkedin.com/company/notdiamond/",
-      xUrl: "https://x.com/notdiamond_ai",
-      linkedinFollowers: floorFollowers(1000, "LinkedIn"),
-      xFollowers: exactFollowers(154, "X"),
-      snapshotDate: DATASET_DATE,
-    },
-    models: metric(
-      notPublished(
-        "Not Diamond selects a model per prompt from a routed set and publishes no headline catalogue count. Public model counts are not comparable with fixed model-marketplace catalogues.",
-      ),
-    ),
-    providers: metric(
-      notPublished("Multiple upstream providers; no provider count is published."),
-    ),
-    routes: metric(notPublished("Multiple routed model sets; no route or endpoint count is published.")),
-    modalities: field(["llm", "agents"], "vendor-stated", {
-      note: VENDOR_NOTE,
-      sources: ["site", "research"],
-    }),
-    openaiCompatible: field("yes", "vendor-stated", {
-      note: "The router is documented as OpenAI-compatible.",
-      sources: ["site", "research"],
-    }),
-    deployment: field(["hosted"], "vendor-stated", { sources: ["research"] }),
-    gatewayLocations: field(["San Francisco, California"], "vendor-stated", {
-      sources: ["research"],
-    }),
-    certifications: field(["SOC 2", "ISO/IEC 27001"], "vendor-stated", { sources: ["site"] }),
-    zeroDataRetention: field("yes", "vendor-stated", {
-      note: "Zero-data-retention is part of the vendor's published positioning.",
-      sources: ["site", "research"],
-    }),
-    euResidency: residencyNotStated(),
-    pricingTransparency: field("public", "verified", { sources: ["site", "research"] }),
-    openSource: field("no", "verified", { sources: ["site"] }),
-    funding: funding(
-      2,
-      [
-        "Defy Partners",
-        "Inovia Capital",
-        "640 Oxford",
-        "VitalStage Ventures",
-        "Karman VC",
-        "Jeff Dean",
-        "Ion Stoica",
-        "Julien Chaumond",
-        "Zack Kass",
-      ],
-      {
-        note: "The company announced a $2.3M pre-seed round; databases record two financing events. Angel investors include Jeff Dean, Ion Stoica, Julien Chaumond and Zack Kass among others.",
-      },
-    ),
-    observability: observability(
-      "basic",
-      "The routing platform documents performance and model-routing functionality, but the public material does not establish a built-in observability analytics layer.",
-      "estimated",
-    ),
-    strengths: [
-      "SOC 2 and ISO/IEC 27001 stated, with zero-data-retention positioning, at an 11–50 person scale.",
-      "Routing tuned for coding agents and prompt-level model selection rather than general chat.",
-    ],
-    limitations: [
-      "No enumerable catalogue, so no model, provider or route count is recorded.",
-      "No EU residency claim is stated.",
-    ],
-    bestFor: ["Teams routing coding-agent traffic across models."],
-    sources: [
-      researchSource(),
-      baselineSource(),
-      siteSource("https://www.notdiamond.ai"),
-      linkedinSource("https://www.linkedin.com/company/notdiamond/"),
-      xSource("notdiamond_ai"),
-      fundingSource("notdiamond.ai announcement"),
-      observabilitySource(),
-    ],
-    lastVerified: DATASET_DATE,
-  }),
-
-  createGateway({
-    id: "maxim-ai",
-    slug: "maxim-ai",
-    name: "Maxim AI (Bifrost)",
-    website: "https://getmaxim.ai/bifrost/",
-    logo: "/logos/maxim-ai.png",
-    summary:
-      "An evaluation and observability platform for AI agents whose gateway component, Bifrost, is published under Apache-2.0 and can be self-hosted, deployed into a VPC or run air-gapped.",
-    differentiator:
-      "Open-source high-performance AI gateway/runtime with self-hosted, VPC and air-gapped options.",
-    type: "enterprise",
-    tier: "primary",
-    categories: ["provider-networks", "eu-hosted", "enterprise", "agent-gateways", "open-source"],
-    jurisdictionBucket: "us",
-    legalEntity: field("H3 Labs Inc.", "verified", { sources: ["site"], asOf: DATASET_DATE }),
-    country: field("United States", "needs-verification", {
-      note: "Recorded by the September 17, 2026 research pass. The country of registration of H3 Labs Inc. has not been read from a registry filing.",
-    }),
-    countryCode: field("US", "needs-verification"),
-    euJurisdiction: field(false, "needs-verification", {
-      note: "Recorded as non-EU on the basis of the research pass; registry confirmation is outstanding.",
-    }),
-    ownershipStatus: field("independent", "verified", { sources: ["research"] }),
-    productStatus: field("active", "verified", { sources: ["repo"] }),
-    employees: employees("51-200"),
-    social: {
-      linkedinUrl: "https://www.linkedin.com/company/maxim-ai/",
-      xUrl: "https://x.com/getmaximai",
-      linkedinFollowers: approxFollowers(6900, "LinkedIn"),
-      xFollowers: exactFollowers(395, "X"),
-      snapshotDate: DATASET_DATE,
-    },
-    models: metric(
-      listed(4457, "documented", DATASET_DATE, {
-        sourceIds: ["repo", "research"],
-        note: "Model entries in the Bifrost catalogue across 99 providers. Bifrost is deployed by the customer and routes to the providers they configure, so the reachable catalogue depends on that configuration rather than being a fixed public catalogue.",
-      }),
-    ),
-    providers: metric(
-      listed(99, "documented", DATASET_DATE, {
-        sourceIds: ["repo", "research"],
-        note: "Providers listed in the Bifrost catalogue; the reachable set is configured per deployment.",
-      }),
-    ),
-    routes: metric(
-      variable("13 routing modes are documented; routes themselves are customer-configured."),
-    ),
-    modalities: field(["llm", "agents"], "vendor-stated", {
-      note: VENDOR_NOTE,
-      sources: ["site", "research"],
-    }),
-    openaiCompatible: field("yes", "vendor-stated", {
-      note: "Bifrost is documented as an OpenAI-compatible gateway.",
-      sources: ["repo", "research"],
-    }),
-    deployment: field(["hosted", "self-hosted", "vpc", "on-prem"], "vendor-stated", {
-      note: "Bifrost can be self-hosted, deployed into a customer VPC, or run air-gapped on-premise.",
-      sources: ["repo", "research"],
-    }),
-    vpc: field("yes", "vendor-stated", { sources: ["site"] }),
-    onPrem: field("yes", "vendor-stated", {
-      note: "Air-gapped deployment is offered.",
-      sources: ["site"],
-    }),
-    gatewayLocations: field(["Customer deployment"], "vendor-stated", { sources: ["research"] }),
-    openSource: field("yes", "verified", {
-      note: "The Bifrost gateway is published under Apache-2.0.",
-      sources: ["repo"],
-    }),
-    license: field("Apache-2.0", "verified", { sources: ["repo"] }),
-    repository: field("https://github.com/maximhq/bifrost", "verified", { sources: ["repo"] }),
-    certifications: field(["SOC 2 Type II", "ISO/IEC 27001"], "vendor-stated", {
-      note: "The vendor also positions around HIPAA and GDPR, which are regulatory regimes rather than certifications.",
-      sources: ["site", "research"],
-    }),
-    zeroDataRetention: field("configurable", "vendor-stated", {
-      note: "Customer controlled: in self-hosted, VPC and air-gapped deployments no vendor endpoint receives the traffic.",
-      sources: ["research"],
-    }),
-    euResidency: field("self-hosted", "vendor-stated", {
-      note: "Residency follows the customer's self-hosted, VPC or air-gapped deployment; a hosted option also exists.",
-      sources: ["repo", "research"],
-      asOf: DATASET_DATE,
-    }),
-    pricingTransparency: field("public-with-enterprise", "verified", {
-      sources: ["site", "research"],
-    }),
-    funding: funding(
-      1,
-      ["Elevation Capital"],
-      {
-        note: "A $3M seed round in June 2024 for Maxim AI (H3 Labs Inc.), with undisclosed angel investors. Bifrost is Maxim's gateway component; financing attributed to unrelated companies named Bifrost is not recorded here.",
-      },
-    ),
-    observability: observability(
-      "advanced",
-      "Logs and traces with advanced log filtering, dataset creation from logs, online evaluation, live dashboards and configurable retention.",
-    ),
-    strengths: [
-      "Gateway component is Apache-2.0 and can run self-hosted, in a VPC or air-gapped, which removes the vendor from the request path.",
-      "SOC 2 Type II and ISO/IEC 27001 stated, alongside agent evaluation tooling, from a 51–200 person company.",
-      "A large configurable catalogue: 4,457 model entries across 99 providers and 13 routing modes documented.",
-    ],
-    limitations: [
-      "The country of registration for H3 Labs Inc. has not been read from a registry filing.",
-      "Model, provider and route counts are configurable rather than a fixed public catalogue, so they are listed but not ranked.",
-    ],
-    bestFor: ["Teams building agents that need evaluation plus a self-hostable gateway."],
-    sources: [
-      researchSource(),
-      baselineSource(),
-      siteSource("https://getmaxim.ai/bifrost/"),
-      repoSource("https://github.com/maximhq/bifrost"),
-      linkedinSource("https://www.linkedin.com/company/maxim-ai/"),
-      xSource("getmaximai"),
-      fundingSource("CB Insights"),
-      observabilitySource("getmaxim.ai"),
     ],
     lastVerified: DATASET_DATE,
   }),
@@ -3520,7 +3043,7 @@ export const gateways: Gateway[] = [
       "Microsoft enterprise AI platform with a very large model catalogue and Azure-native governance/deployment.",
     type: "hyperscaler",
     tier: "hyperscaler",
-    categories: ["eu-hosted", "multimodal", "enterprise"],
+    categories: ["largest-model-catalogues", "eu-hosted", "multimodal", "enterprise"],
     jurisdictionBucket: "us",
     country: field("United States", "verified", {
       note: "Operated by Microsoft Corporation.",
@@ -3552,6 +3075,11 @@ export const gateways: Gateway[] = [
         official("11,000+", DATASET_DATE, {
           sourceIds: ["docs"],
           note: "Broader Foundry platform figure, which covers more than the Foundry Models catalogue.",
+        }),
+        measured(1892, MEASUREMENT_DATE, {
+          scope: "llm",
+          sourceIds: ["models-endpoint"],
+          note: `${COUNT_RULE} Counted from the public Foundry Models catalogue.`,
         }),
       ],
     ),
@@ -3636,6 +3164,7 @@ export const gateways: Gateway[] = [
       researchSource(),
       siteSource("https://azure.microsoft.com/products/ai-foundry"),
       docsSource("https://learn.microsoft.com/en-us/azure/machine-learning/foundry-models-overview"),
+      modelsEndpointSource("https://ai.azure.com/explore/models"),
       linkedinSource("https://www.linkedin.com/company/microsoft/"),
       xSource("Azure"),
       observabilitySource("Microsoft developer blog"),

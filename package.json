@@ -8,10 +8,14 @@
     "start": "next start",
     "lint": "eslint .",
     "audit": "tsx scripts/audit-dataset.ts",
+    "test": "node --import tsx --test \"scripts/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "firecrawl:targets": "tsx scripts/firecrawl/targets.ts",
+    "firecrawl:discover": "tsx scripts/firecrawl/discover.ts",
     "firecrawl:collect": "tsx scripts/firecrawl/collect.ts",
-    "firecrawl:extract": "tsx scripts/firecrawl/extract.ts"
+    "firecrawl:extract": "tsx scripts/firecrawl/extract.ts",
+    "firecrawl:diff": "tsx scripts/firecrawl/diff.ts",
+    "measure:models": "tsx scripts/measure/models.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.20",

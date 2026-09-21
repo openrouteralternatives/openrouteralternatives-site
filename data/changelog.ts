@@ -8,6 +8,21 @@ import type { ChangelogEntry } from "@/types";
  */
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-09-21",
+    kind: "dataset",
+    title: "Four entries removed; Azure AI Foundry catalogue measured; Eden AI providers re-counted",
+    summary:
+      "Orq.ai, Braintrust, Not Diamond and Maxim AI (Bifrost) are no longer tracked in this revision, taking the dataset from 28 to 24 gateways; their records remain in the repository history and their logo files were removed with them. Azure AI Foundry gains this project's own count of the public Foundry Models catalogue (1,892 at LLM scope, from the September 15, 2026 enumeration), recorded in the metric's history alongside the 1,900+ vendor figure that stays current, so it now appears in the measured catalogue ranking. Eden AI's measured provider count from the public provider endpoint is corrected from 78 to 68.",
+    changes: [
+      { gateway: "orq-ai", field: "Entry", previous: "Listed", next: "Removed from the dataset", source: "Sep 21, 2026 dataset revision" },
+      { gateway: "braintrust", field: "Entry", previous: "Listed", next: "Removed from the dataset", source: "Sep 21, 2026 dataset revision" },
+      { gateway: "not-diamond", field: "Entry", previous: "Listed", next: "Removed from the dataset", source: "Sep 21, 2026 dataset revision" },
+      { gateway: "maxim-ai", field: "Entry", previous: "Listed", next: "Removed from the dataset", source: "Sep 21, 2026 dataset revision" },
+      { gateway: "azure-ai-foundry", field: "Models", previous: "1,900+ official only", next: "1,892 measured (LLM scope, Sep 15, 2026) added to history; 1,900+ official stays current; enters largest-model-catalogues", source: "ai.azure.com/explore/models" },
+      { gateway: "eden-ai", field: "Providers (measured)", previous: "78", next: "68 distinct providers across all nine features", source: "api.edenai.run/v2/info/provider_subfeatures" },
+    ],
+  },
+  {
     date: "2026-09-18",
     kind: "company",
     title: "Funding and observability recorded for every gateway",

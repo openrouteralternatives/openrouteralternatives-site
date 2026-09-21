@@ -22,6 +22,7 @@ export default function NotFound() {
             ["/gateways", "Browse gateway profiles"],
             ["/categories", "Browse categories"],
             ["/#methodology", "Read the methodology"],
+            ["/why", "Why this project exists"],
             ["/blog", "Read the blog"],
           ].map(([href, label]) => (
             <li key={href}>

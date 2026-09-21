@@ -7,27 +7,6 @@ import { field, unverified } from "@/types/field";
  */
 export const selfHostedDetails: SelfHostedDetail[] = [
   {
-    gatewayId: "maxim-ai",
-    runtime: field("Go (Bifrost)", "vendor-stated", { sources: ["repo"] }),
-    observability: field(
-      "Agent evaluation, tracing and observability through the Maxim platform",
-      "vendor-stated",
-      { sources: ["site"] },
-    ),
-    routing: field(
-      "Multi-provider routing, fallbacks and governance through the Bifrost gateway",
-      "vendor-stated",
-      { sources: ["repo"] },
-    ),
-    enterpriseOptions: field(
-      "VPC and air-gapped deployment alongside the Apache-2.0 gateway",
-      "vendor-stated",
-      { sources: ["site"] },
-    ),
-    githubStars: unverified("Star counts are point-in-time and are not captured in this revision."),
-    maintainer: field("H3 Labs Inc.", "verified", { sources: ["site"] }),
-  },
-  {
     gatewayId: "litellm",
     runtime: field("Python", "verified", { sources: ["repo"] }),
     observability: field("Built-in logging with callbacks to external observability tools", "vendor-stated", {

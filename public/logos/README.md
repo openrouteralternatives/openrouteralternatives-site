@@ -22,7 +22,6 @@ identification only. No logo was taken from a third-party logo directory.
 | `anannas.png` | Anannas | anannas.ai/Icon.png (`apple-touch-icon` / `mask-icon`), padded onto a square transparent canvas |
 | `atlas-cloud.svg` | Atlas Cloud | atlascloud.ai/logo.svg — the "A" mark path only, re-framed square; the rest of that file is the wordmark |
 | `azure-ai-foundry.png` | Azure AI Foundry | learn.microsoft.com/apple-touch-icon.png |
-| `braintrust.png` | Braintrust | braintrust.dev/icon180.png |
 | `cortecs.png` | Cortecs | cortecs.ai/favicon.ico (48 px entry) |
 | `eden-ai.png` | Eden AI | edenai.co site icon (Webflow asset CDN) |
 | `edgee.svg` | Edgee | edgee.ai/assets/icons/favicon.svg (edgee.cloud redirects there) |
@@ -34,12 +33,9 @@ identification only. No logo was taken from a third-party logo directory.
 | `litellm.png` | LiteLLM | litellm.ai site icon (Webflow asset CDN) |
 | `llmgateway.svg` | llmgateway.io | The icon paths of the inline `LLM Gateway` wordmark SVG on llmgateway.io, filled dark as the site itself renders it on light backgrounds. The apple-touch-icon is a white-on-transparent mark and was invisible in the white logo box. |
 | `martian.png` | Martian | withmartian.com site icon (Webflow asset CDN) |
-| `maxim-ai.png` | Maxim AI (Bifrost) | getmaxim.ai site icon (Framer asset CDN) |
 | `nexos-ai.png` | nexos.ai | nexos.ai `apple-touch-icon` 180 px (served from the company's own sb.nordcdn.com asset CDN) |
-| `not-diamond.png` | Not Diamond | notdiamond.ai `og:image` mark (Sanity asset CDN), 256 px render |
 | `novita-ai.png` | Novita AI | novita.ai/favicon-dark.ico (256 px PNG entry) |
 | `opper.png` | Opper AI | opper.ai/images/icon-dark.png |
-| `orq-ai.svg` | Orq.ai | orq.ai site icon (Framer asset CDN) |
 | `portkey.png` | Portkey | portkey.ai site icon (Framer asset CDN), 64 px |
 | `requesty.png` | Requesty | requesty.ai/apple-icon.png |
 | `respan.png` | Respan | respan.ai/icon-192.png (keywordsai.co redirects there) |

@@ -6,6 +6,10 @@ import path from "node:path";
 export const RESEARCH_ROOT = path.join(process.cwd(), "research", "firecrawl");
 export const RAW_ROOT = path.join(RESEARCH_ROOT, "raw");
 export const CANDIDATES_ROOT = path.join(RESEARCH_ROOT, "candidates");
+export const DISCOVERED_ROOT = path.join(RESEARCH_ROOT, "discovered");
+
+/** Root for model-endpoint measurements written by scripts/measure/models.ts. */
+export const MEASUREMENTS_ROOT = path.join(process.cwd(), "research", "measurements");
 
 export function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true });
@@ -39,3 +43,5 @@ export function writeText(file: string, value: string): void {
   ensureDir(path.dirname(file));
   writeFileSync(file, value, "utf8");
 }
+
+export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

@@ -9,6 +9,7 @@ import { JsonLd, itemListJsonLd } from "@/lib/seo";
 import { Container, SectionHeading } from "@/components/layout/container";
 import { Hero } from "@/components/home/hero";
 import { TrustStrip } from "@/components/home/trust-strip";
+import { WhyIntro } from "@/components/home/why-intro";
 import { EuExplainer } from "@/components/home/eu-explainer";
 import { UseCases } from "@/components/home/use-cases";
 import { Methodology } from "@/components/home/methodology";
@@ -21,7 +22,7 @@ import { CategoryRanking } from "@/components/categories/category-ranking";
 import { GatewayCard } from "@/components/gateways/gateway-card";
 
 /**
- * The homepage is the product: hero, the comparison table, the methodology
+ * The homepage is the product: hero, why the project exists, the comparison table, the methodology
  * that explains how to read it, category discovery, the featured
  * cross-section, how to contribute, and the blog teaser.
  */
@@ -42,6 +43,7 @@ export default function HomePage() {
     <>
       <Hero stats={stats} searchIndex={searchIndex} />
       <TrustStrip />
+      <WhyIntro />
 
       <section aria-labelledby="compare-heading" className="scroll-mt-20 py-14" id="compare">
         <Container>

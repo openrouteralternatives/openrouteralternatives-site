@@ -41,8 +41,8 @@ backend API, no runtime data fetching.
 
 ## Site structure
 
-The homepage is the product. It carries, in order: hero and dataset composition, the
-comparison table with its legend, the methodology that explains how to read the table
+The homepage is the product. It carries, in order: hero and dataset composition, a short
+statement of why the project exists (linking to `/why`), the comparison table with its legend, the methodology that explains how to read the table
 (definitions always visible, longer explanations in disclosure blocks), category
 discovery cards with the two measurable rankings, the EU-company-versus-EU-hosted
 explainer, use-case cards, a featured cross-section, how to contribute, and the blog
@@ -57,6 +57,7 @@ Primary navigation has three entries: **Compare** (the homepage), **Gateways** a
 app/                    routes; every page is statically generated
   page.tsx              the one-page comparison experience
   compare/              full-width variant of the comparison table
+  why/                  why the project exists: gateways, jurisdiction and the US legal authorities involved
   gateways/[slug]/      profile pages, generated from the dataset
   categories/<slug>/    eight category routes over one shared template
   blog/ blog/[slug]/    blog index (empty state until the first article) and articles
@@ -65,13 +66,14 @@ components/
   comparison/           table, columns, filters, expanded row, mobile cards
   gateways/             profile, cards, logo
   categories/           category template, grid, ranking block
-  home/                 hero, trust strip, methodology, EU explainer, contribute, blog teaser
+  home/                 hero, trust strip, why intro, methodology, EU explainer, contribute, blog teaser
   layout/ ui/           header, footer, search, primitives
 data/                   the only place facts live
   gateways.ts           canonical dataset
   categories.ts         category definitions and their criteria
   sources.ts            source hierarchy shown in the methodology section
   blog.ts               published articles (empty until the first one)
+  why.ts                copy for the homepage intro and the /why page, including the cited legal texts
   changelog.ts          dated record of dataset changes (data history, not a public page)
   self-hosted.ts site.ts
 lib/                    ranking, signals, filtering, formatting, SEO, table config
@@ -79,7 +81,10 @@ types/                  shared types
 scripts/
   audit-dataset.ts      dataset integrity audit (npm run audit)
   firecrawl/            research tooling for refreshing gateway data (see its README)
+  measure/              enumerates public model endpoints with the counting rule (npm run measure:models)
+  **/*.test.ts          unit tests for the scripts' pure logic (npm test)
 research/firecrawl/     output of the Firecrawl scripts; raw captures are git-ignored
+research/measurements/  dated model-endpoint enumerations, one JSON per gateway per run
 public/logos/           locally stored gateway marks with a provenance table
 content/                editorial notes that are not rendered data
 ```
@@ -184,8 +189,11 @@ the canonical dataset.
 
 ```bash
 npm run firecrawl:targets   # list the URLs that would be collected, no API call
-npm run firecrawl:collect   # Markdown + metadata per page
-npm run firecrawl:extract   # schema-guided candidates per gateway
+npm run firecrawl:discover  # find pricing, legal, docs and security pages the dataset does not cite
+npm run firecrawl:extract   # Markdown + schema-guided candidates per gateway, one request per page
+npm run firecrawl:collect   # Markdown only, when no extraction is wanted
+npm run firecrawl:diff      # candidate vs dataset, field by field, no API call
+npm run measure:models      # enumerate public model endpoints with the counting rule (not Firecrawl)
 ```
 
 ## Keeping bias out
@@ -244,11 +252,11 @@ for what would close each one.
 
 ## Brand assets
 
-`public/logos/` holds the marks for 24 of the 29 gateways, each taken from the vendor's
+`public/logos/` holds a mark for every gateway in the dataset, each taken from the vendor's
 own website and listed with its origin in [`public/logos/README.md`](public/logos/README.md).
-`GatewayLogo` renders a stable monogram for the five records with `logo: null`, so no
-entry depends on hotlinking a third party's image, and `npm run audit` fails if a record
-points at a file that does not exist.
+`GatewayLogo` renders a stable monogram for any record with `logo: null`, so no entry
+depends on hotlinking a third party's image, and `npm run audit` fails if a record points
+at a file that does not exist.
 
 ## Commands
 
@@ -259,9 +267,13 @@ npm run start              # serve the production build
 npm run typecheck          # tsc --noEmit
 npm run lint               # eslint
 npm run audit              # dataset integrity + unresolved-field classification
+npm test                   # unit tests for the research scripts (node --test via tsx)
 npm run firecrawl:targets  # Firecrawl: list collectable URLs (no API call)
+npm run firecrawl:discover # Firecrawl: map each site for uncited pricing, legal, docs and security pages
 npm run firecrawl:collect  # Firecrawl: capture pages to research/firecrawl/raw
-npm run firecrawl:extract  # Firecrawl: write candidates to research/firecrawl/candidates
+npm run firecrawl:extract  # Firecrawl: capture pages and write candidates to research/firecrawl/candidates
+npm run firecrawl:diff     # compare candidates with data/gateways.ts (no API call)
+npm run measure:models     # enumerate public model endpoints into research/measurements
 ```
 
 ## Accessibility and performance notes

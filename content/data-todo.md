@@ -53,7 +53,7 @@ product and a community project has no funding profile.
 Every gateway carries an `observability` level (None, Basic, Limited, Detailed or
 Advanced) from the September 18, 2026 research pass, read from vendor documentation
 against the scale defined in the methodology. Levels supported only by the absence of
-richer public material — Martian, Not Diamond, Cortecs and AI/ML API — carry the
+richer public material — Martian, Cortecs and AI/ML API — carry the
 `estimated` status; a vendor's documentation of a fuller built-in layer would raise them.
 
 ## Open research
@@ -64,7 +64,7 @@ richer public material — Martian, Not Diamond, Cortecs and AI/ML API — carry
 | --- | --- |
 | Route counts | Vendor documentation or a catalogue exposing per-model providers. Measured for Cortecs (196) and llmgateway.io (571); published by Edgee (972). Endpoint counts are measured for Eden AI (428), Requesty (684) and AI/ML API (943) and published by Portkey (313). |
 | Non-LLM catalogue counts | An enumerable endpoint for OCR, speech, image, video or document models. Only AI/ML API exposes one today (790 across all modalities). |
-| Registry confirmation | Outstanding for Eden AI (entity), LiteLLM, Kong Inc., Maxim AI (H3 Labs Inc.) and TrueFoundry. Their countries are shown with a needs-verification mark. |
+| Registry confirmation | Outstanding for Eden AI (entity), LiteLLM, Kong Inc. and TrueFoundry. Their countries are shown with a needs-verification mark. |
 | Funding | Recorded on September 18, 2026 for 17 gateways as disclosed rounds and named investors (`Field<Funding>`), from the company's own announcements or a named company database. Still not publicly listed for LiteLLM, Atlas Cloud, Anannas, RouteScope, EUrouter, AI/ML API and Novita AI; a filing or the vendor's own announcement would close each. Helicone's round count is preserved as a conflict (two rounds per StartupIntros, one per Crunchbase). Hyperscaler products and Envoy AI Gateway record the field as not applicable. |
 | Pricing model detail | The vendor's pricing page. `pricingTransparency` is recorded for every entry except RouteScope; the free-text pricing model is still open. |
 | Inference regions | Per-model or per-route region documentation — not a single site-wide claim. Recorded for Cortecs and the hyperscalers only. |

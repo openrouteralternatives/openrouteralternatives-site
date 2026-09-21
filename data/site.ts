@@ -46,6 +46,7 @@ export const FOOTER_SECTIONS = [
   {
     title: "How this works",
     links: [
+      { href: "/why", label: "Why this project exists" },
       { href: "/#methodology", label: "Methodology" },
       { href: "/#eu-explainer", label: "EU company vs EU-hosted" },
       { href: "/#contribute", label: "How to contribute" },

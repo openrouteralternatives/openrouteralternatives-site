@@ -123,7 +123,8 @@ export class FirecrawlClient {
 
   /** Discover URLs on a site, optionally filtered by a search term such as "pricing". */
   async map(url: string, search?: string, limit = 100): Promise<string[]> {
-    const envelope = await this.post<{ links?: string[] }>("/map", {
+    type MapLink = string | { url?: string };
+    const envelope = await this.post<{ links?: MapLink[] }>("/map", {
       url,
       ...(search ? { search } : {}),
       limit,
@@ -131,7 +132,11 @@ export class FirecrawlClient {
     if (!envelope.success) {
       throw new FirecrawlError(envelope.error ?? "Firecrawl map failed", 200, url);
     }
-    const links = envelope.links ?? envelope.data?.links ?? [];
-    return links.map((link) => (typeof link === "string" ? link : String(link)));
+    // v1 returned `links: string[]` at the top level; v2 returns
+    // `data.links` as objects with `url`, `title` and `description`.
+    const links = (envelope.links ?? envelope.data?.links ?? []) as MapLink[];
+    return links
+      .map((link) => (typeof link === "string" ? link : link.url))
+      .filter((link): link is string => typeof link === "string" && link.length > 0);
   }
 }
