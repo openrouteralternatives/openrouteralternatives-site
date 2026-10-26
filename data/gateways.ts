@@ -2274,6 +2274,55 @@ export const gateways: Gateway[] = [
   }),
 
   createGateway({
+    id: "popnow",
+    slug: "popnow",
+    name: "PopNow",
+    website: "https://popnow.ai",
+    summary:
+      "Hosted API for image, video and audio generation.",
+    differentiator:
+      "Media-generation tasks with a hosted MCP integration.",
+    type: "managed",
+    tier: "additional",
+    jurisdictionBucket: "unresolved",
+    models: metric(
+      notComparable(
+        "The website's cross-modality total has not been verified as a count of API-addressable models; the API catalogue was not enumerated for this proposal.",
+      ),
+    ),
+    providers: metric(
+      notPublished("No provider total was established in the documentation reviewed for this proposal."),
+    ),
+    routes: metric(
+      notPublished("No route total was established in the documentation reviewed for this proposal."),
+    ),
+    endpoints: metric(
+      notPublished("No endpoint total was counted or established for this proposal."),
+    ),
+    modalities: field(["image", "video", "audio"], "vendor-stated", {
+      sources: ["reference", "mcp"],
+      asOf: "2026-10-26",
+    }),
+    openaiCompatible: unverified(
+      "Generic OpenAI API compatibility is unverified for this media-only record; no protocol coverage is asserted.",
+    ),
+    deployment: field(["hosted"], "vendor-stated", {
+      sources: ["reference", "mcp"],
+      asOf: "2026-10-26",
+    }),
+    pricingModel: field("Paid usage through a separate API USD balance; OAuth MCP uses website credits.", "vendor-stated", {
+      sources: ["billing"],
+      asOf: "2026-10-26",
+    }),
+    sources: [
+      { id: "reference", kind: "documentation", label: "Media API reference", url: "https://popnow.ai/docs/api-reference", retrieved: "2026-10-26" },
+      { id: "mcp", kind: "documentation", label: "Hosted MCP and media generation", url: "https://popnow.ai/docs/mcp", retrieved: "2026-10-26" },
+      { id: "billing", kind: "pricing", label: "API USD billing and OAuth credit boundary", url: "https://popnow.ai/docs/billing", retrieved: "2026-10-26" },
+    ],
+    lastVerified: "2026-10-26",
+  }),
+
+  createGateway({
     id: "routescope",
     slug: "routescope",
     name: "RouteScope",

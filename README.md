@@ -7,7 +7,7 @@
 <h1 align="center">OpenRouter Alternatives</h1>
 
 <p align="center">
-  <strong>One table. 23 AI gateways. Every figure dated, sourced and labelled by how it was obtained.</strong><br>
+  <strong>One table. 24 AI gateways. Every figure dated, sourced and labelled by how it was obtained.</strong><br>
   No score. No “best”. Jurisdiction and data residency recorded as separate facts, never inferred from each other.
 </p>
 
@@ -53,7 +53,7 @@ $ ora compare --jurisdiction eu
                                                    measured 107
   EUrouter   Netherlands  ● EU by default  140+    ◇ catalogue   2-10       ✓ yes   — not recorded
 
-  4/23 rows · ordered by model count, largest first
+  4/24 rows · ordered by model count, largest first
 ```
 
 Ten columns: gateway, jurisdiction, EU residency, models, certifications, employees,

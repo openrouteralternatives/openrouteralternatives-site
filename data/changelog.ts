@@ -8,6 +8,16 @@ import type { ChangelogEntry } from "@/types";
  */
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-10-26",
+    kind: "dataset",
+    title: "PopNow media API added from public documentation",
+    summary:
+      "Adds a managed API entry for image, video and audio generation, with hosted deployment. Generic OpenAI API compatibility, company identity, jurisdiction, location, certifications, retention and unmeasured catalogue quantities stay unresolved. API-key USD billing is kept distinct from OAuth MCP website credits.",
+    changes: [
+      { gateway: "popnow", field: "Entry", previous: null, next: "Listed as a media API with image, video and audio modalities; generic OpenAI compatibility remains unverified", source: "popnow.ai/docs/api-reference; /docs/mcp; /docs/billing, read October 26, 2026" },
+    ],
+  },
+  {
     date: "2026-10-05",
     kind: "site",
     title: "Table opens on model count",
