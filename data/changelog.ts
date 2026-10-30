@@ -8,6 +8,24 @@ import type { ChangelogEntry } from "@/types";
  */
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-10-30",
+    kind: "dataset",
+    title: "Opper AI: providers, modalities, deployment, certification and retention updated",
+    summary:
+      "Opper AI's provider directory now lists 62 hosting providers. Its documentation covers more modalities than the record held, documents dedicated, own-cloud and on-premises deployments, and its trust centre publishes an ISO/IEC 27001:2022 certificate. Zero data retention now records the vendor's own default, with the route dependency kept in the note, and the published Data Processing Agreement and subprocessor list are recorded.",
+    changes: [
+      { gateway: "opper", field: "Providers", previous: "44 listed in the directory; 40+ marketed", next: "62 in the directory, shown as 60+", source: "opper.ai/providers" },
+      { gateway: "opper", field: "Modalities", previous: "LLM, image, audio, video", next: "Adds vision, documents, OCR, STT, TTS, translation, embeddings, reranking, agents and MCP", source: "docs.opper.ai, opper.ai model pages" },
+      { gateway: "opper", field: "Deployment / VPC / on-prem", previous: "Hosted; VPC and on-prem not recorded", next: "Hosted; dedicated instance, own cloud and own hardware on Enterprise", source: "docs.opper.ai/control-plane/sovereign-ai, opper.ai/enterprise" },
+      { gateway: "opper", field: "Certifications", previous: "Not publicly stated", next: "ISO/IEC 27001 (2022), certificate 160926-1", source: "trust.opper.ai" },
+      { gateway: "opper", field: "Zero data retention", previous: "Configurable, route dependent", next: "Yes: no prompt or response content stored by default; provider-side retention set per route and enforceable by rule", source: "opper.ai/pricing, docs.opper.ai/control-plane/zero-data-retention" },
+      { gateway: "opper", field: "DPA", previous: "Not recorded", next: "Published", source: "opper.ai/data-processing-agreement" },
+      { gateway: "opper", field: "Subprocessors", previous: "Not recorded", next: "Published subprocessor list", source: "trust.opper.ai, opper.ai/providers" },
+      { gateway: "opper", field: "OpenAI compatible", previous: "Yes", next: "Yes; the Anthropic and Google AI SDKs also work as drop-ins", source: "docs.opper.ai/build/gateway/drop-in-sdks" },
+      { gateway: "opper", field: "Observability", previous: "Detailed", next: "Advanced: call-tree traces, tags as custom dimensions, quality checks", source: "docs.opper.ai/control-plane/trace" },
+    ],
+  },
+  {
     date: "2026-10-05",
     kind: "site",
     title: "Table opens on model count",
